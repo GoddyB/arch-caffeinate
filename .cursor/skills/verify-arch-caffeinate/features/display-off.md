@@ -22,8 +22,8 @@ Preconditions:
 
 - **Read idle.** Run `ioreg -c IOHIDSystem` and record `HIDIdleTime`.
 - **Wait.** Poll at most 8 seconds, one second at a time, until idle time is at least 5 seconds.
-- **Read display.** Run `pmset -g powerstate IODisplayWrangler` and `ioreg -n IODisplayWrangler -r -d 1`. The display power state is off, which is the full-off state `pmset displaysleepnow` produces, not the dim state.
-- **Read status.** Run `arch-caffeinate status --json`. `display` is `"off"`.
+- **Read display.** Run `ioreg -r -d 1 -c AppleCLCD2`. `"CurrentPowerState"=0` means fully off. `1` means on. This is the full-off state `pmset displaysleepnow` produces, not the dim state. V2 fails when this reading is absent.
+- **Read status.** Run `arch-caffeinate status --json`. `display` is `"off"`, the same reading as `CurrentPowerState`.
 - **Proof.** Save the `ioreg` idle line and the display power listing together.
 
 ## Gotchas
