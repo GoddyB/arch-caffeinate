@@ -3,12 +3,14 @@ set -u
 
 ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-OUT="$ROOT/artifacts/verify/$STAMP"
+OUT="${VERIFY_OUT:-$ROOT/artifacts/verify/$STAMP}"
 mkdir -p "$OUT"
 TRANSCRIPT="$OUT/transcript.txt"
 : >"$TRANSCRIPT"
 
 FAILS=0
+POLL_SEC="${VERIFY_POLL_SEC:-1}"
+INSTALL_TEST="${VERIFY_INSTALL_TEST:-$ROOT/scripts/test-install-from-clone.sh}"
 
 line() {
   printf '%s\n' "$1" | tee -a "$TRANSCRIPT"
@@ -54,6 +56,7 @@ not_macos() {
   mark FAIL V5 "not macOS"
   mark FAIL V6 "not macOS"
   mark FAIL V7 "not macOS"
+  mark FAIL V8 "not macOS"
   finish
 }
 
@@ -75,6 +78,7 @@ missing_cli() {
   mark FAIL V5 "arch-caffeinate is not on PATH"
   mark FAIL V6 "arch-caffeinate is not on PATH"
   mark FAIL V7 "arch-caffeinate is not on PATH"
+  mark FAIL V8 "arch-caffeinate is not on PATH"
   finish
 }
 
@@ -98,23 +102,6 @@ else:
 PY
 }
 
-require_fields() {
-  python3 - "$1" <<'PY'
-import json, sys
-need = [
-    "running", "pid", "power", "sleepPrevented", "display",
-    "idleSeconds", "idleThresholdSeconds", "screenLock", "version",
-]
-with open(sys.argv[1]) as f:
-    data = json.load(f)
-missing = [k for k in need if k not in data]
-if missing:
-    print("missing " + ",".join(missing))
-    sys.exit(1)
-print("ok")
-PY
-}
-
 wait_until() {
   local seconds="$1"
   local i=0
@@ -123,7 +110,7 @@ wait_until() {
     if "$@"; then
       return 0
     fi
-    sleep 1
+    sleep "$POLL_SEC"
     i=$((i + 1))
   done
   return 1
@@ -149,19 +136,74 @@ display_is() {
   capture "$OUT/display-ioreg.txt" ioreg -r -d 1 -c AppleCLCD2
   local got reported
   got="$(display_reading "$OUT/display-ioreg.txt" 2>>"$TRANSCRIPT" || true)"
-  arch-caffeinate status --json >"$OUT/status.json" 2>>"$TRANSCRIPT" || return 1
+  "$BIN" status --json >"$OUT/status.json" 2>>"$TRANSCRIPT" || return 1
   reported="$(json_get "$OUT/status.json" display 2>>"$TRANSCRIPT" || true)"
   [[ "$got" == "$want_n" && "$reported" == "$want" ]]
 }
 
-"$BIN" install --idle-seconds 5 >>"$TRANSCRIPT" 2>&1 || true
-"$BIN" install --idle-seconds 5 >>"$TRANSCRIPT" 2>&1 || true
+hold_display() {
+  local want="$1"
+  local samples="$2"
+  local i=0
+  while [[ "$i" -lt "$samples" ]]; do
+    display_is "$want" || return 1
+    sleep "$POLL_SEC"
+    i=$((i + 1))
+  done
+  return 0
+}
 
-doctor_out="$("$BIN" doctor 2>&1)" || true
+state_is_fresh() {
+  python3 - "$STATE" "1000" "3" <<'PY'
+import json, sys, time
+path, poll_ms, polls = sys.argv[1], float(sys.argv[2]), float(sys.argv[3])
+try:
+    data = json.load(open(path))
+except (OSError, json.JSONDecodeError):
+    sys.exit(1)
+written = data.get("writtenAt")
+if not isinstance(written, (int, float)) or isinstance(written, bool):
+    sys.exit(1)
+if abs(time.time() * 1000 - float(written)) <= poll_ms * polls:
+    sys.exit(0)
+sys.exit(1)
+PY
+}
+
+install_ok=0
+if "$BIN" install --idle-seconds 5 >>"$TRANSCRIPT" 2>&1; then
+  cp "$PLIST" "$OUT/plist.1"
+  if "$BIN" install --idle-seconds 5 >>"$TRANSCRIPT" 2>&1; then
+    if cmp -s "$PLIST" "$OUT/plist.1"; then
+      install_ok=1
+    fi
+  fi
+fi
+
+state_is_fresh || true
+if wait_until 3 state_is_fresh; then
+  line "PASS heartbeat writtenAt is fresh"
+else
+  line "FAIL heartbeat writtenAt is not fresh"
+  FAILS=$((FAILS + 1))
+fi
+
+doctor_out="$("$BIN" doctor 2>&1)"
 doctor_code=$?
 printf '%s\n' "$doctor_out" >>"$TRANSCRIPT"
 printf 'doctor_exit:%s\n' "$doctor_code" >>"$TRANSCRIPT"
-if [[ "$doctor_code" -eq 0 ]]; then
+doctor_lines_ok=1
+if [[ -z "$doctor_out" ]]; then
+  doctor_lines_ok=0
+else
+  while IFS= read -r doctor_line; do
+    [[ -z "$doctor_line" ]] && continue
+    if [[ ! "$doctor_line" =~ ^(PASS|WARN)([[:space:]]|$) ]]; then
+      doctor_lines_ok=0
+    fi
+  done <<<"$doctor_out"
+fi
+if [[ "$doctor_code" -eq 0 && "$doctor_lines_ok" -eq 1 ]]; then
   line "PASS doctor exit 0"
 else
   line "FAIL doctor exit ${doctor_code}"
@@ -170,13 +212,19 @@ fi
 
 "$BIN" status --json >"$OUT/status.json" 2>>"$TRANSCRIPT" || true
 power="$(json_get "$OUT/status.json" power 2>>"$TRANSCRIPT" || echo unknown)"
+prevented="$(json_get "$OUT/status.json" sleepPrevented 2>>"$TRANSCRIPT" || echo missing)"
 
 capture "$OUT/assertions.txt" pmset -g assertions
 pid="$(json_get "$OUT/status.json" pid 2>>"$TRANSCRIPT" || echo none)"
-if [[ "$power" == "ac" ]] && grep -q PreventSystemSleep "$OUT/assertions.txt" && grep -q "$pid" "$OUT/assertions.txt"; then
-  mark PASS V1 "PreventSystemSleep lists pid ${pid} while power is ac"
+child="$(pgrep -P "$pid" -x caffeinate 2>>"$TRANSCRIPT" | head -n 1 || true)"
+if [[ "$power" == "ac" && "$prevented" == "true" && -n "$child" ]] \
+  && grep -Eq '^ *PreventSystemSleep +1$' "$OUT/assertions.txt" \
+  && grep -Eq "pid ${child}\\(caffeinate\\):" "$OUT/assertions.txt"; then
+  mark PASS V1 "PreventSystemSleep 1 lists pid ${child}(caffeinate) while power is ac and sleepPrevented is true"
+elif [[ "$power" == "battery" ]]; then
+  mark FAIL V1 "power is battery; releasing the assertion on battery is a manual gap"
 else
-  mark FAIL V1 "power is ${power} or PreventSystemSleep does not list the daemon pid"
+  mark FAIL V1 "power is ${power}, sleepPrevented is ${prevented}, or PreventSystemSleep does not list pid ${child}(caffeinate)"
 fi
 
 capture "$OUT/hid.txt" ioreg -c IOHIDSystem
@@ -186,41 +234,50 @@ else
   mark FAIL V2 "display stayed on for 8 seconds at idle threshold 5"
 fi
 
-line "simulated user activity: arch-caffeinate wake"
-"$BIN" wake >>"$TRANSCRIPT" 2>&1 || true
+line "wake coverage: arch-caffeinate wake stands in for mouse or key input"
 wake_input=0
-if wait_until 3 display_is on; then
-  wake_input=1
-fi
-
-if wait_until 8 display_is off; then
-  osascript -e 'display notification "verify" with title "arch-caffeinate"' >>"$TRANSCRIPT" 2>&1 || true
-  wake_note=0
+if display_is off; then
+  "$BIN" wake >>"$TRANSCRIPT" 2>&1 || true
   if wait_until 3 display_is on; then
-    wake_note=1
+    wake_input=1
   fi
-else
-  wake_note=0
 fi
 
-if [[ "$wake_input" -eq 1 && "$wake_note" -eq 1 ]]; then
-  mark PASS V3 "AppleCLCD2 CurrentPowerState is 1 after simulated user activity and after a notification"
+"$BIN" stop >>"$TRANSCRIPT" 2>&1 || true
+osascript -e 'display notification "verify" with title "arch-caffeinate"' >>"$TRANSCRIPT" 2>&1 || true
+note_while_stopped=0
+if hold_display off 3; then
+  note_while_stopped=1
+fi
+
+"$BIN" start >>"$TRANSCRIPT" 2>&1 || true
+osascript -e 'display notification "verify" with title "arch-caffeinate"' >>"$TRANSCRIPT" 2>&1 || true
+note_while_started=0
+if wait_until 3 display_is on; then
+  note_while_started=1
+fi
+
+if [[ "$wake_input" -eq 1 && "$note_while_stopped" -eq 1 && "$note_while_started" -eq 1 ]]; then
+  mark PASS V3 "wake stands in for mouse or key input; notification leaves CurrentPowerState 0 while stopped and 1 after start"
 else
-  mark FAIL V3 "input wake=${wake_input} notification wake=${wake_note}"
+  mark FAIL V3 "wake=${wake_input} notification_while_stopped=${note_while_stopped} notification_after_start=${note_while_started}"
 fi
 
 capture "$OUT/screenlock.txt" sysadminctl -screenLock status
+"$BIN" status --json >"$OUT/status.json" 2>>"$TRANSCRIPT" || true
 lock="$(json_get "$OUT/status.json" screenLock 2>>"$TRANSCRIPT" || echo missing)"
 if [[ "$lock" == "off" ]] && grep -qi 'off' "$OUT/screenlock.txt"; then
-  mark PASS V4 "sysadminctl and status screenLock are off"
+  mark PASS V4 "sysadminctl stderr and status screenLock are off"
 else
   mark FAIL V4 "screenLock is ${lock}"
 fi
 
-if [[ -n "$BIN" ]]; then
-  mark PASS V5 "login bash resolves arch-caffeinate"
+resolved_version="$(bash -lc 'arch-caffeinate --version' 2>>"$TRANSCRIPT" || true)"
+bin_version="$("$BIN" --version 2>>"$TRANSCRIPT" || true)"
+if [[ "$BIN" == "$HOME/.local/bin/arch-caffeinate" && -n "$bin_version" && "$resolved_version" == "$bin_version" ]]; then
+  mark PASS V5 "login bash runs $HOME/.local/bin/arch-caffeinate and --version matches"
 else
-  mark FAIL V5 "login bash does not resolve arch-caffeinate"
+  mark FAIL V5 "login bash resolved ${BIN:-empty}"
 fi
 
 GHOSTTY=""
@@ -231,29 +288,68 @@ elif [[ -x /Applications/Ghostty.app/Contents/MacOS/ghostty ]]; then
 fi
 if [[ -n "$GHOSTTY" ]]; then
   capture "$OUT/ghostty-config.txt" "$GHOSTTY" +show-config
-  if grep -E 'command *= *.*/?bash([[:space:]]|$)' "$OUT/ghostty-config.txt" >/dev/null 2>&1; then
-    mark PASS V6 "Ghostty command is bash"
+  if grep -Eq '^command = (/bin/|/opt/homebrew/bin/)?bash( .*)?$' "$OUT/ghostty-config.txt"; then
+    mark PASS V6 "Ghostty command = line runs bash"
   else
-    mark FAIL V6 "Ghostty command is not bash"
+    mark FAIL V6 "Ghostty command = line does not run bash"
   fi
 else
   mark FAIL V6 "Ghostty is not installed"
 fi
 
-if require_fields "$OUT/status.json" >>"$TRANSCRIPT" 2>&1 \
-  && grep -q 'idle-seconds' "$PLIST" \
-  && launchctl print "gui/${UID}/${LABEL}" >"$OUT/launchctl.txt" 2>>"$TRANSCRIPT"; then
-  mark PASS V7 "install loaded the agent and status --json has the contract fields"
+"$BIN" status --json >"$OUT/status.json" 2>>"$TRANSCRIPT" || true
+running="$(json_get "$OUT/status.json" running 2>>"$TRANSCRIPT" || echo missing)"
+status_pid="$(json_get "$OUT/status.json" pid 2>>"$TRANSCRIPT" || echo missing)"
+threshold="$(json_get "$OUT/status.json" idleThresholdSeconds 2>>"$TRANSCRIPT" || echo missing)"
+display_field="$(json_get "$OUT/status.json" display 2>>"$TRANSCRIPT" || echo missing)"
+status_version="$(json_get "$OUT/status.json" version 2>>"$TRANSCRIPT" || echo missing)"
+bin_version_one="$("$BIN" --version 2>>"$TRANSCRIPT" | tr -d '\r\n' || true)"
+launch_ok=0
+launch_pid=""
+if launchctl print "gui/${UID}/${LABEL}" >"$OUT/launchctl.txt" 2>>"$TRANSCRIPT"; then
+  launch_ok=1
+  launch_pid="$(sed -n 's/^pid = \([0-9][0-9]*\)$/\1/p' "$OUT/launchctl.txt" | head -n 1)"
+fi
+power_ok=0
+case "$power" in
+  ac|battery|unknown) power_ok=1 ;;
+esac
+display_ok=0
+case "$display_field" in
+  on|off) display_ok=1 ;;
+esac
+if [[ "$install_ok" -eq 1 && "$launch_ok" -eq 1 && "$running" == "true" \
+  && "$status_pid" == "$launch_pid" && -n "$launch_pid" \
+  && "$threshold" == "5" && "$power_ok" -eq 1 && "$display_ok" -eq 1 \
+  && "$status_version" == "$bin_version_one" && -n "$bin_version_one" ]]; then
+  mark PASS V7 "second install matches the first plist, launchctl pid matches status, idleThresholdSeconds is 5"
 else
-  mark FAIL V7 "install, launchctl print, or status fields failed"
+  mark FAIL V7 "install_ok=${install_ok} running=${running} pid=${status_pid} launch_pid=${launch_pid} threshold=${threshold} power=${power} display=${display_field} version=${status_version}"
+fi
+
+v8_out="$OUT/v8.txt"
+if [[ -x "$INSTALL_TEST" ]] && "$INSTALL_TEST" >"$v8_out" 2>&1; then
+  cat "$v8_out" >>"$TRANSCRIPT"
+  mark PASS V8 "scripts/test-install-from-clone.sh exited 0"
+else
+  cat "$v8_out" >>"$TRANSCRIPT" 2>/dev/null || true
+  mark FAIL V8 "scripts/test-install-from-clone.sh failed"
 fi
 
 "$BIN" install >>"$TRANSCRIPT" 2>&1 || true
-"$BIN" status --json >"$OUT/status-after-cleanup.json" 2>>"$TRANSCRIPT" || true
-restored="$(json_get "$OUT/status-after-cleanup.json" idleThresholdSeconds 2>>"$TRANSCRIPT" || echo missing)"
-if [[ "$restored" == "600" ]]; then
+threshold_is_600() {
+  "$BIN" status --json >"$OUT/status-after-cleanup.json" 2>>"$TRANSCRIPT" || return 1
+  [[ "$(json_get "$OUT/status-after-cleanup.json" idleThresholdSeconds 2>>"$TRANSCRIPT" || true)" == "600" ]]
+}
+restored_ok=0
+threshold_is_600 || true
+if wait_until 3 threshold_is_600; then
+  restored_ok=1
+fi
+if [[ "$restored_ok" -eq 1 ]] && [[ -f "$PLIST" ]] && ! grep -q -- '--idle-seconds' "$PLIST"; then
   line "cleanup idleThresholdSeconds is 600"
 else
+  restored="$(json_get "$OUT/status-after-cleanup.json" idleThresholdSeconds 2>>"$TRANSCRIPT" || echo missing)"
   line "FAIL cleanup idleThresholdSeconds is ${restored}"
   FAILS=$((FAILS + 1))
 fi
