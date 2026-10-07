@@ -59,11 +59,17 @@ git -C "$dir" config user.email "$gmail"
 printf '%s\n' 'more' >> "$dir/README.md"
 commit_all "$dir" 'gmail identity'
 run_check "$dir"
-if [[ $code -eq 0 ]] || ! printf '%s\n' "$out" | grep -q 'non-noreply' || ! printf '%s\n' "$out" | grep -q "$gmail"; then
+if [[ $code -eq 0 ]] || ! printf '%s\n' "$out" | grep -q 'non-noreply' || printf '%s\n' "$out" | grep -q "$gmail"; then
   bad 'gmail commit identity fails' "exit $code"$'\n'"$out"
 else
   pass 'gmail commit identity fails'
 fi
+
+dir=$(new_repo)
+printf '%s\n' 'hello' > "$dir/README.md"
+git -C "$dir" add -A
+git -C "$dir" commit -q -m 'trailer' -m "Co-authored-by: Bob <$gmail>"
+expect 'email in a commit message fails' 1 "$dir"
 
 dir=$(new_repo)
 printf '%s\n' 'hello' > "$dir/README.md"
