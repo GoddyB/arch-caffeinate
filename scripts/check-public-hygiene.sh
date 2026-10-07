@@ -17,8 +17,9 @@ for p in "${patterns[@]}"; do
     echo "public-hygiene: forbidden pattern found:"; echo "$hits"; status=1
   fi
 done
-emails=$(git log --format='%ae%n%ce' 2>/dev/null | sort -u || true)
-if bad=$(printf '%s\n' "$emails" | grep -vE 'users\.noreply\.github\.com$|^noreply@github\.com$|^$'); then
+# HYGIENE_RANGE limits the commit check to new commits (CI sets it). Unset checks all history.
+emails=$(git log --format='%ae%n%ce' ${HYGIENE_RANGE:-} 2>/dev/null | sort -u || true)
+if bad=$(printf '%s\n' "$emails" | grep -vE 'users\.noreply\.github\.com$|^noreply@github\.com$|^cursoragent@cursor\.com$|^$'); then
   echo "public-hygiene: non-noreply commit email(s):"; echo "$bad"; status=1
 fi
 exit $status
