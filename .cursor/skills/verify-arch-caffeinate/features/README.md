@@ -1,6 +1,6 @@
 # arch-caffeinate verification map
 
-This directory is the maintained source for verifying arch-caffeinate. Read this index, then the feature file that names the V-number you are proving. The words in quotes are the product spec subset in `verbatim/2026-10-07-arch-caffeinate.md`.
+This directory is the maintained source for verifying arch-caffeinate. Read this index, then the feature file that names the V-number you are proving. Each V-number is defined in `verbatim/2026-10-07-arch-caffeinate.md`.
 
 ## Baseline preconditions
 
