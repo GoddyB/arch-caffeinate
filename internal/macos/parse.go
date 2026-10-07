@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	idleRe    = regexp.MustCompile(`HIDIdleTime"\s*=\s*([0-9]+)`)
-	delayRe   = regexp.MustCompile(`(?i)delay is\s+([0-9]+)`)
-	displayRe = regexp.MustCompile(`"CurrentPowerState"\s*=\s*([0-9]+)`)
+	idleRe       = regexp.MustCompile(`HIDIdleTime"\s*=\s*([0-9]+)`)
+	displayRe    = regexp.MustCompile(`"CurrentPowerState"\s*=\s*([0-9]+)`)
+	screenLockRe = regexp.MustCompile(`(?i)screenLock delay is\s+(immediate|off|([0-9]+))`)
 )
 
 func ParsePower(out string) core.Power {
@@ -43,18 +43,20 @@ func ParseIdle(out string) (time.Duration, bool) {
 	return time.Duration(n), true
 }
 
-func ParseScreenLock(out string) string {
-	low := strings.ToLower(out)
-	switch {
-	case strings.Contains(low, "immediate"):
-		return "immediate"
-	case strings.Contains(low, "off"):
-		return "off"
+func ParseScreenLock(out string) core.ScreenLock {
+	matches := screenLockRe.FindAllStringSubmatch(out, -1)
+	if len(matches) == 0 {
+		return core.ScreenLockUnknown
 	}
-	if m := delayRe.FindStringSubmatch(out); m != nil {
-		return "delay:" + m[1]
+	m := matches[len(matches)-1]
+	switch strings.ToLower(m[1]) {
+	case "immediate":
+		return core.ScreenLockImmediate
+	case "off":
+		return core.ScreenLockOff
+	default:
+		return core.ScreenLockDelay(m[2])
 	}
-	return "unknown"
 }
 
 func ParseDisplay(out string) (core.Display, bool) {
