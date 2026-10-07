@@ -40,7 +40,7 @@ jobs:
               workOnCurrentBranch: true,
               autoCreatePR: false,
               name: $name,
-              prompt: $prompt
+              prompt: {text: $prompt}
             }')
           tmp=$(mktemp)
           code=$(curl -sS -o "$tmp" -w '%{http_code}' \
@@ -50,6 +50,7 @@ jobs:
             https://api.cursor.com/v1/agents)
           if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
             echo "cursor api status ${code}" >&2
+            jq -c '{code, message, error}' "$tmp" >&2 || true
             exit 1
           fi
           jq -er '"\(.agent.id) \(.agent.url)"' "$tmp"
