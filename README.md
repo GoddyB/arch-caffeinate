@@ -18,21 +18,7 @@ go build ./cmd/arch-caffeinate && ./arch-caffeinate install
 
 ## Usage
 
-`arch-caffeinate install [--idle-seconds N]` copies the running binary, writes the LaunchAgent, and loads it. Running it again replaces the plist and loads the same label.
-
-`arch-caffeinate uninstall` unloads the agent and removes the plist. The binary stays in `~/.local/bin`.
-
-`arch-caffeinate start` loads the LaunchAgent. `arch-caffeinate stop` unloads it.
-
-`arch-caffeinate run [--idle-seconds N] [--poll-ms M]` is the foreground daemon. The default idle threshold is 600 seconds. The default poll is 1000 ms.
-
-`arch-caffeinate status` prints the daemon state. `arch-caffeinate status --json` prints `running`, `pid`, `power`, `sleepPrevented`, `display`, `idleSeconds`, `idleThresholdSeconds`, `screenLock`, and `version`. `display` is the `CurrentPowerState` reading from `ioreg -r -d 1 -c AppleCLCD2`. `1` is `on`. `0` is `off`.
-
-`arch-caffeinate doctor` prints one `PASS`, `WARN`, or `FAIL` line per check and exits 0 unless a line is `FAIL`. On a system that is not macOS the macOS line is `FAIL` and says `not macOS`.
-
-`arch-caffeinate wake` declares user activity so the display turns on. The effect matches `caffeinate -u -t 1`.
-
-`arch-caffeinate --version` prints the version and exits 0.
+Commands, status fields, and files are specified in [docs/cli-contract.md](docs/cli-contract.md). How the daemon decides to sleep or wake the display is in [docs/design.md](docs/design.md).
 
 ## Uninstall
 
