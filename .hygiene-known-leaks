@@ -1,8 +1,0 @@
-# Commits on main that carry the owner's profile email: in the author or committer
-# (1c596f3, 624e413) or in a Co-authored-by trailer Cursor added (a0127e4, cfe76a6).
-# They predate the guard. Remove this file in the history rewrite that replaces them.
-# Never add commits made after the guard.
-1c596f31eb7c9771337cfc7975aac82f34c5dbde
-624e4130c392eadab77c00de1916f3da466554d9
-a0127e42fc0760c88e56ae5ded297a8919e35b52
-cfe76a6095dc947ae799bff274a4b681baeb571b

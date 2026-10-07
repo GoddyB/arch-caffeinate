@@ -59,7 +59,7 @@ git -C "$dir" config user.email "$gmail"
 printf '%s\n' 'more' >> "$dir/README.md"
 commit_all "$dir" 'gmail identity'
 run_check "$dir"
-if [[ $code -eq 0 ]] || ! printf '%s\n' "$out" | grep -q 'non-noreply' || printf '%s\n' "$out" | grep -q "$gmail"; then
+if [[ $code -eq 0 ]] || ! printf '%s\n' "$out" | grep -q "not authored and committed as the owner" || printf '%s\n' "$out" | grep -q "$gmail"; then
   bad 'gmail commit identity fails' "exit $code"$'\n'"$out"
 else
   pass 'gmail commit identity fails'
@@ -74,19 +74,10 @@ expect 'email in a commit message fails' 1 "$dir"
 dir=$(new_repo)
 printf '%s\n' 'hello' > "$dir/README.md"
 commit_all "$dir" 'base'
-git -C "$dir" config user.email "$gmail"
-printf '%s\n' 'leak' >> "$dir/README.md"
-commit_all "$dir" 'known leak commit'
-sha=$(git -C "$dir" rev-parse HEAD)
-git -C "$dir" config user.email "$nore"
-printf '%s\n' "$sha" > "$dir/.hygiene-known-leaks"
-commit_all "$dir" 'record known leak'
-run_check "$dir"
-if [[ $code -ne 0 ]] || ! printf '%s\n' "$out" | grep -q 'WARNING'; then
-  bad 'known leak warns and passes' "exit $code"$'\n'"$out"
-else
-  pass 'known leak warns and passes'
-fi
+git -C "$dir" config user.email '1+someone@users.noreply.github.com'
+printf '%s\n' 'more' >> "$dir/README.md"
+commit_all "$dir" 'another noreply identity'
+expect "another account's noreply identity fails" 1 "$dir"
 
 dir=$(new_repo)
 printf '%s\n' "keep ${nore} and ${gmail}" > "$dir/notes.txt"

@@ -16,7 +16,10 @@ patterns=(
   '[A-Za-z0-9-]+\.ts\.net'
   '(gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|key_[A-Za-z0-9]{24,})'
 )
-commit_email_allow='users\.noreply\.github\.com$|^noreply@github\.com$|^cursoragent@cursor\.com$'
+# Every author and committer must be the owner's noreply identity.
+owner_email='324734221+GoddyB@users.noreply.github.com'
+# Commit messages may also name Cursor's agent, which its tooling adds as a co-author.
+message_email_allow='^324734221\+GoddyB@users\.noreply\.github\.com$|^cursoragent@cursor\.com$'
 # shellcheck disable=SC2016 # literal $USER patterns, not expansions
 allow='(users\.noreply\.github\.com|noreply@github\.com|cursoragent@cursor\.com|/Users/(example|you|USER|\$USER|\$\{USER\})|/home/(runner|example|user|ubuntu)/|@example\.(com|org)|git@github\.com)'
 status=0
@@ -59,40 +62,23 @@ if ! shas=$(git rev-list HEAD); then
   exit 1
 fi
 
-known=''
-if [[ -f .hygiene-known-leaks ]]; then
-  known=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' .hygiene-known-leaks)
-fi
-
 if [[ -n $log_out ]]; then
   while IFS=$'\t' read -r sha ae ce; do
     [[ -z ${sha:-} ]] && continue
-    for email in "$ae" "$ce"; do
-      [[ -z $email ]] && continue
-      if printf '%s\n' "$email" | grep -qE "$commit_email_allow"; then
-        continue
-      fi
-      if printf '%s\n' "$known" | grep -qxF "$sha"; then
-        echo "public-hygiene: WARNING known leak awaiting history rewrite: $sha"
-      else
-        echo "public-hygiene: commit $sha has a non-noreply identity"
-        status=1
-      fi
-    done
+    if [[ $ae != "$owner_email" || $ce != "$owner_email" ]]; then
+      echo "public-hygiene: commit $sha is not authored and committed as the owner's noreply identity"
+      status=1
+    fi
   done <<< "$log_out"
 fi
 # Report leaks by commit only: CI logs are public, so never echo the address itself.
 for sha in $shas; do
   for email in $(git log -1 --format=%B "$sha" | grep -oE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' || true); do
-    if printf '%s\n' "$email" | grep -qE "$commit_email_allow"; then
+    if printf '%s\n' "$email" | grep -qE "$message_email_allow"; then
       continue
     fi
-    if printf '%s\n' "$known" | grep -qxF "$sha"; then
-      echo "public-hygiene: WARNING known leak awaiting history rewrite: $sha (message)"
-    else
-      echo "public-hygiene: commit $sha has an email in its message"
-      status=1
-    fi
+    echo "public-hygiene: commit $sha has an email in its message"
+    status=1
   done
 done
 exit $status
