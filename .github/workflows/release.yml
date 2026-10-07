@@ -1,0 +1,31 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Build archives and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          ldflags="-s -w -X main.version=${version}"
+          for arch in arm64 amd64; do
+            name="arch-caffeinate-${version}-darwin-${arch}"
+            mkdir -p "${name}"
+            GOOS=darwin GOARCH="${arch}" go build -trimpath -ldflags "${ldflags}" -o "${name}/arch-caffeinate" ./cmd/arch-caffeinate
+            cp LICENSE "${name}/LICENSE"
+            tar -czf "${name}.tar.gz" "${name}"
+          done
+          sha256sum arch-caffeinate-*.tar.gz > SHA256SUMS
+          gh release create "${version}" --verify-tag --generate-notes arch-caffeinate-*.tar.gz SHA256SUMS
