@@ -9,10 +9,14 @@ import (
 	"time"
 
 	"github.com/GoddyB/arch-caffeinate/internal/core"
-	"github.com/GoddyB/arch-caffeinate/internal/macos"
 )
 
-const Version = "0.1.0"
+const (
+	Version            = "0.1.0"
+	Label              = "io.github.goddyb.arch-caffeinate"
+	DefaultIdleSeconds = 600
+	DefaultPollMs      = 1000
+)
 
 type Status struct {
 	Running              bool    `json:"running"`
@@ -24,8 +28,12 @@ type Status struct {
 	IdleThresholdSeconds int     `json:"idleThresholdSeconds"`
 	ScreenLock           string  `json:"screenLock"`
 	Version              string  `json:"version"`
-	WrittenAt            int64   `json:"writtenAt,omitempty"`
-	PollMs               int     `json:"pollMs,omitempty"`
+}
+
+type StateFile struct {
+	Status
+	WrittenAt int64 `json:"writtenAt"`
+	PollMs    int   `json:"pollMs"`
 }
 
 type Paths struct {
@@ -41,7 +49,7 @@ func (p Paths) LogFile() string {
 }
 
 func (p Paths) Plist() string {
-	return filepath.Join(p.Home, "Library", "LaunchAgents", "io.github.goddyb.arch-caffeinate.plist")
+	return filepath.Join(p.Home, "Library", "LaunchAgents", Label+".plist")
 }
 
 func (p Paths) Bin() string {
@@ -53,6 +61,7 @@ type Config struct {
 	Poll          time.Duration
 	Now           func() time.Time
 	Logf          func(string, ...any)
+	Wait          func(context.Context) error
 }
 
 func (c Config) now() time.Time {
@@ -68,93 +77,149 @@ func (c Config) logf(format string, args ...any) {
 	}
 }
 
-func Tick(ctx context.Context, host macos.Host, paths Paths, cfg Config, state core.State) (core.State, Status, error) {
-	now := cfg.now()
-	power, powerErr := host.Power(ctx)
-	if powerErr != nil {
-		cfg.logf("power: %v", powerErr)
-		power = core.PowerUnknown
+func normalize(cfg Config) Config {
+	if cfg.IdleThreshold <= 0 {
+		cfg.IdleThreshold = time.Duration(DefaultIdleSeconds) * time.Second
 	}
-	idle, idleErr := host.Idle(ctx)
-	if idleErr != nil {
-		cfg.logf("idle: %v", idleErr)
-		if state.Display == core.DisplayOff {
-			idle = cfg.coreConfig().IdleThreshold
-		} else {
-			idle = 0
-		}
+	if cfg.Poll <= 0 {
+		cfg.Poll = time.Duration(DefaultPollMs) * time.Millisecond
 	}
-	note := host.NotificationPending()
-	obs := core.Observation{
-		Now:                   now,
-		Power:                 power,
-		HIDIdle:               idle,
-		NotificationDelivered: note,
-	}
-	if idleErr != nil {
-		obs.HIDIdle = 0
-		obs.NotificationDelivered = note
-	}
-	next, actions := core.Step(cfg.coreConfig(), state, obs)
-	failed := map[core.Action]bool{}
-	for _, action := range actions {
-		if err := apply(ctx, host, action); err != nil {
-			cfg.logf("%s: %v", action, err)
-			failed[action] = true
-		}
-	}
-	if failed[core.AcquireSleepAssertion] || failed[core.ReleaseSleepAssertion] {
-		next.SleepHeld = state.SleepHeld
-	}
-	if failed[core.TurnDisplayOff] || failed[core.DeclareActivity] {
-		next.Display = state.Display
-	}
-	if note && !failed[core.DeclareActivity] {
-		host.ClearNotification()
-	}
+	return cfg
+}
 
-	display := next.Display.String()
-	if live, ok, err := host.Display(ctx); err == nil && ok {
-		display = live.String()
+type Reader interface {
+	Power(context.Context) (core.Power, error)
+	Idle(context.Context) (time.Duration, error)
+	Display(context.Context) (core.Display, error)
+	ScreenLock(context.Context) (core.ScreenLock, error)
+	SleepHeld() bool
+}
+
+type Host interface {
+	Reader
+	TakeNotification() bool
+	AcquireSleep(context.Context) error
+	ReleaseSleep(context.Context) error
+	DisplayOff(context.Context) error
+	DeclareActivity(context.Context) error
+	StartNotifications(context.Context, func(string, ...any)) error
+}
+
+type Reading struct {
+	Power      core.Power
+	PowerErr   error
+	Idle       time.Duration
+	IdleErr    error
+	Display    core.Display
+	DisplayErr error
+	Lock       core.ScreenLock
+	LockErr    error
+	SleepHeld  bool
+}
+
+func Snapshot(ctx context.Context, host Reader) Reading {
+	var r Reading
+	var err error
+	r.Power, err = host.Power(ctx)
+	if err != nil {
+		r.Power = core.PowerUnknown
+		r.PowerErr = err
 	}
-	lock := "unknown"
-	if s, err := host.ScreenLock(ctx); err == nil && s != "" {
-		lock = s
+	r.Idle, err = host.Idle(ctx)
+	if err != nil {
+		r.IdleErr = err
+	}
+	r.Display, err = host.Display(ctx)
+	if err != nil {
+		r.Display = core.DisplayOn
+		r.DisplayErr = err
+	}
+	r.Lock, err = host.ScreenLock(ctx)
+	if err != nil {
+		r.Lock = core.ScreenLockUnknown
+		r.LockErr = err
+	}
+	r.SleepHeld = host.SleepHeld()
+	return r
+}
+
+func Tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.State, pending bool) (core.State, Status, bool, error) {
+	cfg = normalize(cfg)
+	if host.TakeNotification() {
+		pending = true
+	}
+	reading := Snapshot(ctx, host)
+	if reading.PowerErr != nil {
+		cfg.logf("power: %v", reading.PowerErr)
+	}
+	if reading.IdleErr != nil {
+		cfg.logf("idle: %v", reading.IdleErr)
+	}
+	if reading.DisplayErr != nil {
+		cfg.logf("display: %v", reading.DisplayErr)
+	}
+	if reading.LockErr != nil {
+		cfg.logf("screenlock: %v", reading.LockErr)
+	}
+	obs := core.Observation{
+		Power:                 reading.Power,
+		HIDIdle:               reading.Idle,
+		IdleKnown:             reading.IdleErr == nil,
+		SleepHeld:             reading.SleepHeld,
+		NotificationDelivered: pending,
+	}
+	failedDeclare := false
+	next := core.Advance(core.Config{IdleThreshold: cfg.IdleThreshold}, state, obs, func(action core.Action) error {
+		err := apply(ctx, host, action)
+		if err != nil {
+			cfg.logf("%s: %v", action, err)
+			if action == core.DeclareActivity {
+				failedDeclare = true
+			}
+		}
+		return err
+	})
+	display := core.DisplayOn.String()
+	if reading.DisplayErr == nil {
+		display = reading.Display.String()
+	}
+	idleSeconds := 0.0
+	if reading.IdleErr == nil {
+		idleSeconds = reading.Idle.Seconds()
+	}
+	lock := string(core.ScreenLockUnknown)
+	if reading.LockErr == nil {
+		lock = string(reading.Lock)
 	}
 	pid := os.Getpid()
 	st := Status{
 		Running:              true,
 		PID:                  &pid,
-		Power:                power.String(),
+		Power:                reading.Power.String(),
 		SleepPrevented:       next.SleepHeld,
 		Display:              display,
-		IdleSeconds:          idle.Seconds(),
+		IdleSeconds:          idleSeconds,
 		IdleThresholdSeconds: int(cfg.IdleThreshold / time.Second),
 		ScreenLock:           lock,
 		Version:              Version,
-		WrittenAt:            now.UnixMilli(),
-		PollMs:               int(cfg.Poll / time.Millisecond),
 	}
-	if err := writeStatus(paths, st); err != nil {
-		return next, st, err
+	rec := StateFile{
+		Status:    st,
+		WrittenAt: cfg.now().UnixMilli(),
+		PollMs:    int(cfg.Poll / time.Millisecond),
 	}
-	return next, st, nil
+	if err := writeState(paths, rec); err != nil {
+		return next, st, failedDeclare, err
+	}
+	return next, st, failedDeclare, nil
 }
 
-func (c Config) coreConfig() core.Config {
-	threshold := c.IdleThreshold
-	if threshold <= 0 {
-		threshold = 600 * time.Second
-	}
-	return core.Config{IdleThreshold: threshold}
-}
-
-func apply(ctx context.Context, host macos.Host, action core.Action) error {
+func apply(ctx context.Context, host Host, action core.Action) error {
 	switch action {
 	case core.AcquireSleepAssertion:
 		return host.AcquireSleep(ctx)
 	case core.ReleaseSleepAssertion:
-		return host.ReleaseSleep()
+		return host.ReleaseSleep(ctx)
 	case core.TurnDisplayOff:
 		return host.DisplayOff(ctx)
 	case core.DeclareActivity:
@@ -164,30 +229,37 @@ func apply(ctx context.Context, host macos.Host, action core.Action) error {
 	}
 }
 
-func writeStatus(paths Paths, st Status) error {
+func writeState(paths Paths, rec StateFile) error {
 	if err := os.MkdirAll(filepath.Dir(paths.StateFile()), 0o755); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(st, "", "  ")
+	b, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
 		return err
 	}
 	b = append(b, '\n')
-	tmp := paths.StateFile() + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, paths.StateFile())
+	return WriteFileAtomic(paths.StateFile(), b, 0o644)
 }
 
-func ReadStatus(paths Paths) (Status, error) {
+func ReadState(paths Paths) (StateFile, error) {
 	b, err := os.ReadFile(paths.StateFile())
 	if err != nil {
-		return Status{}, err
+		return StateFile{}, err
 	}
-	var st Status
-	err = json.Unmarshal(b, &st)
-	return st, err
+	var rec StateFile
+	err = json.Unmarshal(b, &rec)
+	return rec, err
+}
+
+func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, mode); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func AppendLog(paths Paths, line string) {
@@ -202,32 +274,48 @@ func AppendLog(paths Paths, line string) {
 	_, _ = fmt.Fprintln(f, line)
 }
 
-func Run(ctx context.Context, host macos.Host, paths Paths, cfg Config) error {
-	if cfg.Poll <= 0 {
-		cfg.Poll = time.Second
+func (c Config) wait(ctx context.Context) error {
+	if c.Wait != nil {
+		return c.Wait(ctx)
 	}
-	if cfg.IdleThreshold <= 0 {
-		cfg.IdleThreshold = 600 * time.Second
+	timer := time.NewTimer(c.Poll)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
-	_ = host.StartNotifications(ctx)
+}
+
+func Run(ctx context.Context, host Host, paths Paths, cfg Config) error {
+	cfg = normalize(cfg)
+	if cfg.Logf == nil {
+		cfg.Logf = func(format string, args ...any) {
+			AppendLog(paths, fmt.Sprintf(format, args...))
+		}
+	}
+	if err := host.StartNotifications(ctx, cfg.logf); err != nil {
+		cfg.logf("notifications: %v", err)
+	}
 	var state core.State
+	var pending bool
 	tick := func() {
-		next, _, err := Tick(ctx, host, paths, cfg, state)
+		next, _, still, err := Tick(ctx, host, paths, cfg, state, pending)
 		state = next
+		pending = still
 		if err != nil {
-			AppendLog(paths, err.Error())
+			cfg.logf("%s", err.Error())
 		}
 	}
 	tick()
-	ticker := time.NewTicker(cfg.Poll)
-	defer ticker.Stop()
 	for {
-		select {
-		case <-ctx.Done():
-			_ = host.ReleaseSleep()
+		if err := cfg.wait(ctx); err != nil {
+			if relErr := host.ReleaseSleep(ctx); relErr != nil {
+				cfg.logf("release: %v", relErr)
+			}
 			return nil
-		case <-ticker.C:
-			tick()
 		}
+		tick()
 	}
 }

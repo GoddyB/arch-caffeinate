@@ -17,6 +17,9 @@ func TestParsePower(t *testing.T) {
 	if got := ParsePower("Now drawing from 'UPS Power'\n"); got != core.PowerUnknown {
 		t.Fatalf("got %s", got)
 	}
+	if got := ParsePower("Now drawing from 'UPS Power'\n -InternalBattery-0 'AC Power'\n"); got != core.PowerUnknown {
+		t.Fatalf("got %s", got)
+	}
 }
 
 func TestParseIdle(t *testing.T) {
@@ -31,17 +34,21 @@ func TestParseIdle(t *testing.T) {
 }
 
 func TestParseScreenLock(t *testing.T) {
-	if got := ParseScreenLock("screenLock delay is immediate\n"); got != "immediate" {
-		t.Fatalf("got %s", got)
+	cases := []struct {
+		in   string
+		want core.ScreenLock
+	}{
+		{"screenLock delay is immediate\n", core.ScreenLockImmediate},
+		{"screenLock delay is off\n", core.ScreenLockOff},
+		{"screenLock delay is 300 seconds\n", core.ScreenLockDelay("300")},
+		{"screenLock status unavailable\n", core.ScreenLockUnknown},
+		{"sysadminctl -screenLock {status | immediate | off | seconds} -password password\n", core.ScreenLockUnknown},
+		{"sysadminctl -screenLock {status | immediate | off | seconds}\nscreenLock delay is immediate\n", core.ScreenLockImmediate},
 	}
-	if got := ParseScreenLock("screenLock delay is off\n"); got != "off" {
-		t.Fatalf("got %s", got)
-	}
-	if got := ParseScreenLock("screenLock delay is 300 seconds\n"); got != "delay:300" {
-		t.Fatalf("got %s", got)
-	}
-	if got := ParseScreenLock("screenLock status unavailable\n"); got != "unknown" {
-		t.Fatalf("got %s", got)
+	for _, tc := range cases {
+		if got := ParseScreenLock(tc.in); got != tc.want {
+			t.Fatalf("%q got %s want %s", tc.in, got, tc.want)
+		}
 	}
 }
 
@@ -59,6 +66,10 @@ func TestParseDisplay(t *testing.T) {
 	if _, ok := ParseDisplay("no panel"); ok {
 		t.Fatal("expected miss")
 	}
+	got, ok = ParseDisplay(`"CurrentPowerState"=2`)
+	if ok || got != core.DisplayOn {
+		t.Fatalf("unknown: %s %v", got, ok)
+	}
 }
 
 func TestParseNotification(t *testing.T) {
@@ -67,6 +78,12 @@ func TestParseNotification(t *testing.T) {
 		t.Fatal("expected delivery")
 	}
 	if ParseNotification(`{"eventMessage":"Dropped note"}`) {
+		t.Fatal("expected ignore")
+	}
+	if ParseNotification(`{"eventMessage":"Dropped","note":"Delivering x"}`) {
+		t.Fatal("expected ignore")
+	}
+	if ParseNotification("Filtering the log data using ...") {
 		t.Fatal("expected ignore")
 	}
 }
