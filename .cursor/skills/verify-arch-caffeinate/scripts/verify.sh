@@ -129,12 +129,29 @@ wait_until() {
   return 1
 }
 
+display_reading() {
+  python3 - "$1" <<'PY'
+import re, sys
+text = open(sys.argv[1], errors="replace").read()
+m = re.search(r'"CurrentPowerState"\s*=\s*(\d+)', text)
+if not m:
+    sys.exit(1)
+print(m.group(1))
+PY
+}
+
 display_is() {
   local want="$1"
-  capture "$OUT/display-powerstate.txt" pmset -g powerstate IODisplayWrangler
-  capture "$OUT/display-ioreg.txt" ioreg -n IODisplayWrangler -r -d 1
+  local want_n=1
+  if [[ "$want" == "off" ]]; then
+    want_n=0
+  fi
+  capture "$OUT/display-ioreg.txt" ioreg -r -d 1 -c AppleCLCD2
+  local got reported
+  got="$(display_reading "$OUT/display-ioreg.txt" 2>>"$TRANSCRIPT" || true)"
   arch-caffeinate status --json >"$OUT/status.json" 2>>"$TRANSCRIPT" || return 1
-  [[ "$(json_get "$OUT/status.json" display 2>>"$TRANSCRIPT" || true)" == "$want" ]]
+  reported="$(json_get "$OUT/status.json" display 2>>"$TRANSCRIPT" || true)"
+  [[ "$got" == "$want_n" && "$reported" == "$want" ]]
 }
 
 "$BIN" install --idle-seconds 5 >>"$TRANSCRIPT" 2>&1 || true
@@ -164,11 +181,12 @@ fi
 
 capture "$OUT/hid.txt" ioreg -c IOHIDSystem
 if wait_until 8 display_is off; then
-  mark PASS V2 "display power state is off after the 5 second idle threshold"
+  mark PASS V2 "AppleCLCD2 CurrentPowerState is 0 and status display is off"
 else
   mark FAIL V2 "display stayed on for 8 seconds at idle threshold 5"
 fi
 
+line "simulated user activity: arch-caffeinate wake"
 "$BIN" wake >>"$TRANSCRIPT" 2>&1 || true
 wake_input=0
 if wait_until 3 display_is on; then
@@ -186,7 +204,7 @@ else
 fi
 
 if [[ "$wake_input" -eq 1 && "$wake_note" -eq 1 ]]; then
-  mark PASS V3 "display turned on after wake and after a notification"
+  mark PASS V3 "AppleCLCD2 CurrentPowerState is 1 after simulated user activity and after a notification"
 else
   mark FAIL V3 "input wake=${wake_input} notification wake=${wake_note}"
 fi

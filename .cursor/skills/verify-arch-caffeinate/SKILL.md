@@ -30,7 +30,7 @@ Read [features/README.md](features/README.md), then the feature file for the V-n
 Observable commands, copied into the evidence directory:
 
 - `pmset -g assertions` shows a `PreventSystemSleep` assertion owned by the daemon while `power` is `ac`.
-- `ioreg -n IODisplayWrangler -r -d 1` or `pmset -g powerstate IODisplayWrangler` shows the display power state.
+- `ioreg -r -d 1 -c AppleCLCD2` shows `"CurrentPowerState"=1` while the display is on and `0` while it is off. V2 and V3 require that reading. `status --json` reports the same value in `display`.
 - `ioreg -c IOHIDSystem` shows `HIDIdleTime`.
 - `sysadminctl -screenLock status` shows the screen-lock setting.
 - `bash -lc 'command -v arch-caffeinate'` prints the binary path.
@@ -40,7 +40,7 @@ Use the 5 second threshold. Do not wait out the 600 second default. The helper b
 
 ## Evidence
 
-The helper writes `artifacts/verify/<UTC timestamp>/` in the clone. The directory holds `transcript.txt` (commands, stdout, stderr, exit codes) and `status.json` when the CLI answers. A proof shows the command and the next observed state. `status --json` alone does not prove sleep prevention or display power. Those proofs are the `pmset` and `ioreg` listings.
+The helper writes `artifacts/verify/<UTC timestamp>/` in the clone. The directory holds `transcript.txt` (commands, stdout, stderr, exit codes) and `status.json` when the CLI answers. A proof shows the command and the next observed state. `status --json` alone does not prove sleep prevention or display power. Sleep prevention is the `pmset` listing. Display power is `CurrentPowerState` from `ioreg -r -d 1 -c AppleCLCD2`. `status --json` must match that reading.
 
 Do not change the screen-lock setting to make V4 pass. If it is not off, V4 is `FAIL` and the transcript quotes `sysadminctl`.
 

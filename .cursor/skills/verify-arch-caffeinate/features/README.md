@@ -22,7 +22,7 @@ This directory is the maintained source for verifying arch-caffeinate. Read this
 
 - Record the V-number with the command that proves it.
 - Sleep prevention proof is `pmset -g assertions`, not only `sleepPrevented`.
-- Display proof is `ioreg` or `pmset` power state for `IODisplayWrangler`.
+- Display proof is `CurrentPowerState` from `ioreg -r -d 1 -c AppleCLCD2`. `1` means on and `0` means off. `status --json` `display` must match that reading. V2 and V3 fail when the ioreg reading is missing.
 - Idle proof is `HIDIdleTime` from `ioreg -c IOHIDSystem`.
 - Screen-lock proof is `sysadminctl -screenLock status` next to `status --json`.
 - Shell proof is `bash -lc 'command -v arch-caffeinate'` and Ghostty `+show-config`.
