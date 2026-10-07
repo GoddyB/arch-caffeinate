@@ -1,0 +1,49 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Public hygiene
+        env:
+          HYGIENE_RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || format('{0}^..{0}', github.sha) }}
+        run: scripts/check-public-hygiene.sh
+      - name: gofmt
+        run: |
+          if [ -f go.mod ]; then
+            test -z "$(gofmt -l .)"
+          fi
+      - name: go vet
+        run: |
+          if [ -f go.mod ]; then
+            go vet ./...
+          fi
+      - name: go test
+        run: |
+          if [ -f go.mod ]; then
+            go test ./...
+          fi
+      - name: shellcheck
+        run: |
+          mapfile -t files < <(git ls-files '*.sh')
+          if [ "${#files[@]}" -gt 0 ]; then
+            shellcheck "${files[@]}"
+          fi
+      - name: Install from clone
+        run: |
+          if [ -x scripts/test-install-from-clone.sh ]; then
+            scripts/test-install-from-clone.sh
+          fi
