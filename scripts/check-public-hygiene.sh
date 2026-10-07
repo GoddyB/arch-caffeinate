@@ -14,7 +14,9 @@ patterns=(
   '/home/[A-Za-z0-9._-]+/'
   '\b100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b'
   '[A-Za-z0-9-]+\.ts\.net'
-  '(gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|key_[A-Za-z0-9]{24,})'
+  '(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|key_[A-Za-z0-9]{24,})'
+  '[A-Za-z0-9][A-Za-z0-9-]*\.local([^A-Za-z0-9/_.-]|$)'
+  '[A-Za-z0-9]+-(MacBook|iMac|Mac-mini|Mac-Studio|Mac-Pro)'
 )
 # Every author and committer must be the owner's noreply identity.
 owner_email='324734221+GoddyB@users.noreply.github.com'

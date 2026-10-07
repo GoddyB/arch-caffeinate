@@ -89,6 +89,19 @@ else
   pass 'mixed noreply and gmail line fails'
 fi
 
+for leak in 'Janes-MacBook-Pro.local' 'ssh to Janes-MacBook-Pro' 'github_pat_11ABCDEFG0123456789_abcdefghijklmnop'; do
+  dir=$(new_repo)
+  printf '%s\n' "$leak" > "$dir/notes.txt"
+  commit_all "$dir" 'planted leak'
+  expect "planted '$leak' fails" 1 "$dir"
+done
+
+dir=$(new_repo)
+# shellcheck disable=SC2016 # literal $HOME text, not an expansion
+printf '%s\n' 'Install to ~/.local/bin or $HOME/.local/bin.' > "$dir/README.md"
+commit_all "$dir" 'local bin path'
+expect 'home .local/bin paths pass' 0 "$dir"
+
 dir=$(new_repo)
 printf '%s\n' 'hello' > "$dir/README.md"
 commit_all "$dir" 'base'
