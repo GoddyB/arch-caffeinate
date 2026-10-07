@@ -1,7 +1,5 @@
 # Display off
 
-V2. "after inactivity turns screen fully off (not macOS dim state) to prevent burn-in"
-
 After HID idle time reaches the threshold, the display is fully off.
 
 ## Sub-features

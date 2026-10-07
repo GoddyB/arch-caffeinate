@@ -1,7 +1,5 @@
 # Wake
 
-V3. "wakes on mouse move, keypress, or notification"
-
 Mouse movement, a keypress, or a delivered notification turns the display on.
 
 ## Sub-features

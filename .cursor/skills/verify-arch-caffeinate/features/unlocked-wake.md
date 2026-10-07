@@ -1,7 +1,5 @@
 # Unlocked wake
 
-V4. "like a phone lock screen but unlocked"
-
 The display wakes without a password prompt only when the macOS screen-lock setting is off. `status` and `doctor` report that setting.
 
 ## Sub-features
