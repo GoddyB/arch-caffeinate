@@ -18,9 +18,9 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Public hygiene
-        env:
-          HYGIENE_RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || format('{0}^..{0}', github.sha) }}
         run: scripts/check-public-hygiene.sh
+      - name: Hygiene self-test
+        run: scripts/test-public-hygiene.sh
       - name: gofmt
         run: |
           if [ -f go.mod ]; then

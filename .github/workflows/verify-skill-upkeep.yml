@@ -5,7 +5,7 @@ on:
 permissions: {}
 jobs:
   upkeep:
-    if: github.event.pull_request.head.repo.fork == false && secrets.CURSOR_API_KEY != ''
+    if: github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -17,6 +17,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
+          if [ -z "$CURSOR_API_KEY" ]; then echo 'CURSOR_API_KEY not set; skipping'; exit 0; fi
           prompt=$(cat <<'EOF'
           /poteto-mode
           Playbook: Authoring or modifying a skill (playbooks/authoring-a-skill.md)
@@ -24,7 +25,7 @@ jobs:
           2. Validate the skill: frontmatter has `name` and `description`, referenced files exist, cross-skill links resolve.
           3. Test cases if structural. Skip if subjective.
           4. Run **Opening a PR**.
-          Run /maintain-verification-skill on .cursor/skills/verify-arch-caffeinate/ for the changes in this PR. Edit only that skill directory. Push corrections to this PR's branch. Never merge. Commit as GoddyB <324734221+GoddyB@users.noreply.github.com> with no Co-authored-by trailer. Live macOS drives are verified-unreachable on this Linux VM; say so instead of faking them. End with a verification report: outcome (clean, changed, blocked), features covered, and pass/fail evidence per feature.
+          Run /maintain-verification-skill on .cursor/skills/verify-arch-caffeinate/ for the changes in this PR. Edit only that skill directory. Push corrections to this PR's branch. Never merge. Commit as GoddyB <324734221+GoddyB@users.noreply.github.com> and end every commit message with the trailer Co-authored-by: GoddyB <324734221+GoddyB@users.noreply.github.com> so Cursor's hook adds no other address. pstack skills are on disk: find / -path '*skills/maintain-verification-skill/SKILL.md' 2>/dev/null. Live macOS drives are verified-unreachable on this Linux VM; say so instead of faking them. End with a verification report: outcome (clean, changed, blocked), features covered, and pass/fail evidence per feature.
           EOF
           )
           prompt="${prompt#"${prompt%%[![:space:]]*}"}"
@@ -51,5 +52,5 @@ jobs:
             echo "cursor api status ${code}" >&2
             exit 1
           fi
-          jq -er '"\(.id) \(.url // .target.url)"' "$tmp"
+          jq -er '"\(.agent.id) \(.agent.url)"' "$tmp"
           rm -f "$tmp"
