@@ -19,11 +19,8 @@ git -C "$WORKDIR/src" checkout --quiet "$REV"
   go build -o "$WORKDIR/arch-caffeinate" ./cmd/arch-caffeinate
 )
 
-HOME_DIR="$(mktemp -d)"
+HOME_DIR="$WORKDIR/home"
 mkdir -p "$HOME_DIR"
-cat >"$HOME_DIR/.bash_profile" <<'EOF'
-export PATH="$HOME/.local/bin:$PATH"
-EOF
 
 LOG="$WORKDIR/launchctl.log"
 STUB="$WORKDIR/launchctl"
@@ -34,12 +31,14 @@ exit 0
 EOF
 chmod +x "$STUB"
 
+PLIST="$HOME_DIR/Library/LaunchAgents/io.github.goddyb.arch-caffeinate.plist"
 HOME="$HOME_DIR" ARCH_CAFFEINATE_LAUNCHCTL="$STUB" "$WORKDIR/arch-caffeinate" install --idle-seconds 5
+cp "$PLIST" "$WORKDIR/plist.1"
+HOME="$HOME_DIR" ARCH_CAFFEINATE_LAUNCHCTL="$STUB" "$WORKDIR/arch-caffeinate" install --idle-seconds 5
+cmp "$PLIST" "$WORKDIR/plist.1"
+cmp "$WORKDIR/arch-caffeinate" "$HOME_DIR/.local/bin/arch-caffeinate"
+grep -qx "bootstrap gui/$(id -u) $PLIST" "$LOG"
+grep -q '<string>--idle-seconds</string>' "$PLIST"
+grep -q '<key>KeepAlive</key><true></true>' "$PLIST"
 
-test -x "$HOME_DIR/.local/bin/arch-caffeinate"
-test -f "$HOME_DIR/Library/LaunchAgents/io.github.goddyb.arch-caffeinate.plist"
-grep -q 'bootstrap gui/' "$LOG"
-
-RESOLVED="$(HOME="$HOME_DIR" bash -lc 'command -v arch-caffeinate')"
-test "$RESOLVED" = "$HOME_DIR/.local/bin/arch-caffeinate"
-echo "install-from-clone ok $RESOLVED"
+echo "install-from-clone ok"
