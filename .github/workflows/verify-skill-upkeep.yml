@@ -1,0 +1,55 @@
+name: verify-skill-upkeep
+on:
+  pull_request:
+    types: [opened, reopened]
+permissions: {}
+jobs:
+  upkeep:
+    if: github.event.pull_request.head.repo.fork == false && secrets.CURSOR_API_KEY != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Launch verification-skill upkeep
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          prompt=$(cat <<'EOF'
+          /poteto-mode
+          Playbook: Authoring or modifying a skill (playbooks/authoring-a-skill.md)
+          1. Use the **create-skill** skill (Cursor's built-in for authoring SKILL.md files).
+          2. Validate the skill: frontmatter has `name` and `description`, referenced files exist, cross-skill links resolve.
+          3. Test cases if structural. Skip if subjective.
+          4. Run **Opening a PR**.
+          Run /maintain-verification-skill on .cursor/skills/verify-arch-caffeinate/ for the changes in this PR. Edit only that skill directory. Push corrections to this PR's branch. Never merge. Commit as GoddyB <324734221+GoddyB@users.noreply.github.com> with no Co-authored-by trailer. Live macOS drives are verified-unreachable on this Linux VM; say so instead of faking them. End with a verification report: outcome (clean, changed, blocked), features covered, and pass/fail evidence per feature.
+          EOF
+          )
+          prompt="${prompt#"${prompt%%[![:space:]]*}"}"
+          body=$(jq -n \
+            --arg name "verify-skill upkeep PR #${PR_NUMBER}" \
+            --arg prompt "$prompt" \
+            --arg url "$REPO_URL" \
+            --arg prUrl "$PR_URL" \
+            '{
+              model: {id: "grok-4.7", params: [{id: "reasoning_effort", value: "xhigh"}, {id: "fast", value: "false"}]},
+              repos: [{url: $url, prUrl: $prUrl}],
+              workOnCurrentBranch: true,
+              autoCreatePR: false,
+              name: $name,
+              prompt: $prompt
+            }')
+          tmp=$(mktemp)
+          code=$(curl -sS -o "$tmp" -w '%{http_code}' \
+            -u "$CURSOR_API_KEY:" \
+            -H 'Content-Type: application/json' \
+            -d "$body" \
+            https://api.cursor.com/v1/agents)
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "cursor api status ${code}" >&2
+            exit 1
+          fi
+          jq -er '"\(.id) \(.url // .target.url)"' "$tmp"
+          rm -f "$tmp"
