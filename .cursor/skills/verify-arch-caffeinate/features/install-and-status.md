@@ -1,6 +1,6 @@
 # Install and status
 
-V7. "Once built, install on my computer; I am first user; test it."
+V7. "install it on my computer, and then I will be my own first user. And you can test it"
 
 `install` on the owner's Mac loads the LaunchAgent. `status --json` returns the contract fields. `doctor` exits 0.
 

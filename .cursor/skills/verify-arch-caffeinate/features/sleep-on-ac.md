@@ -1,6 +1,6 @@
 # Sleep on AC
 
-V1. "macOS tool: prevents sleep while plugged in"
+V1. "when I have it sitting and plugged in, ... it never sleeps."
 
 While the Mac is on AC power, the daemon holds a system-sleep assertion. On battery it releases that assertion.
 

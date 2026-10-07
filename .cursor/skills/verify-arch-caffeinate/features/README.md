@@ -35,3 +35,4 @@ This directory is the maintained source for verifying arch-caffeinate. Read this
 - [Unlocked wake](./unlocked-wake.md) proves V4.
 - [Bash in Ghostty](./bash-in-ghostty.md) proves V5 and V6.
 - [Install and status](./install-and-status.md) proves V7.
+- [Test from a clone](./test-from-clone.md) proves V8.

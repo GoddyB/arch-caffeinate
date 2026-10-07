@@ -1,6 +1,6 @@
 # Wake
 
-V3. "wakes on mouse move, keypress, or notification"
+V3. "when I move the mouse or press a key, or even a notification pops up, the screen comes back on."
 
 Mouse movement, a keypress, or a delivered notification turns the display on.
 

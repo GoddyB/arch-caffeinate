@@ -1,8 +1,8 @@
 # Bash in Ghostty
 
-V5. "CLI recognized in bash in Ghosty"
+V5. "control this functionality from a CLI that is recognized when I use bash in Ghosty"
 
-V6. "make Ghosty always start in bash (not zsh)"
+V6. "make it so that Ghosty always starts in bash"
 
 Ghostty is the Ghosty terminal named in the spec. A login bash finds `arch-caffeinate`. Ghostty starts bash.
 

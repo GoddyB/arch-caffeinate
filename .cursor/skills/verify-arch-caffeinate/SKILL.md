@@ -25,7 +25,7 @@ Run `arch-caffeinate doctor` before any Drive step when a check looks wrong. Doc
 
 ## Drive
 
-Read [features/README.md](features/README.md), then the feature file for the V-number you are proving. Run the commands in that file from bash. The helper runs every V-number in order with `--idle-seconds 5`.
+Read [features/README.md](features/README.md), then the feature file for the V-number you are proving. Run the commands in that file from bash. The helper runs V1 through V7 in order with `--idle-seconds 5`. [Test from a clone](features/test-from-clone.md) is V8. The helper does not print a V8 line.
 
 Observable commands, copied into the evidence directory:
 
