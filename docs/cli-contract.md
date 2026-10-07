@@ -36,7 +36,7 @@ Paths below use the login user's home directory. The binary name on `PATH` is `a
 
 ## Files the daemon writes
 
-Each poll, the daemon writes `~/Library/Application Support/arch-caffeinate/state.json`. The file is the `status --json` object plus `writtenAt`, a unix time in milliseconds. The heartbeat is fresh when `writtenAt` is within three poll intervals of now.
+Each poll, the daemon writes `~/Library/Application Support/arch-caffeinate/state.json`. The file is the `status --json` object plus `writtenAt`, a unix time in milliseconds, and `pollMs`, the daemon poll interval in milliseconds. The heartbeat is fresh when `writtenAt` is within three poll intervals of now.
 
 The daemon appends logs to `~/Library/Logs/arch-caffeinate.log`.
 
