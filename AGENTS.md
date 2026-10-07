@@ -12,4 +12,4 @@ The owner's own words in `verbatim/` are the spec. Don't edit them. When code, d
 
 This repo is public. Never commit an email address other than a GitHub noreply address, a home-directory path with a real username, a tailnet IP or hostname, a machine name, or a token. `scripts/check-public-hygiene.sh` enforces this in CI.
 
-Commit as `GoddyB <324734221+GoddyB@users.noreply.github.com>`. Squash-merge with `gh pr merge <n> --squash --author-email 324734221+GoddyB@users.noreply.github.com`, because GitHub otherwise stamps the squash commit with the account's profile email.
+Commit as `GoddyB <324734221+GoddyB@users.noreply.github.com>`. Don't merge PRs with GitHub's merge button or `gh pr merge`. GitHub stamps those merge commits with the account's profile email. The orchestrator fast-forwards `main` to a green PR head instead.
