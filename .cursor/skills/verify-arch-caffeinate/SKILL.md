@@ -1,6 +1,6 @@
 ---
 name: verify-arch-caffeinate
-description: "Drive the installed arch-caffeinate macOS CLI from bash and prove sleep prevention, display power, wake, screen lock, Ghostty bash, and install. Use when verifying arch-caffeinate on the owner's Mac, or when doctor must report that the machine is not macOS."
+description: "Drive the installed arch-caffeinate macOS CLI from bash and prove sleep prevention, display power, wake, screen lock, Ghostty bash, install, and the clone install script. Use when verifying arch-caffeinate on the owner's Mac, or when doctor must report that the machine is not macOS."
 ---
 
 # Verify arch-caffeinate
@@ -25,7 +25,7 @@ Run `arch-caffeinate doctor` before any Drive step when a check looks wrong. Doc
 
 ## Drive
 
-Read [features/README.md](features/README.md), then the feature file for the V-number you are proving. Run the commands in that file from bash. The helper runs every V-number in order with `--idle-seconds 5`.
+Read [features/README.md](features/README.md), then the feature file for the V-number you are proving. Run the commands in that file from bash. The helper runs V1 through V7 in order with `--idle-seconds 5`, then V8 via `scripts/test-install-from-clone.sh`.
 
 Observable commands, copied into the evidence directory:
 
@@ -46,10 +46,12 @@ Do not change the screen-lock setting to make V4 pass. If it is not off, V4 is `
 
 ## Cleanup
 
-The helper runs `arch-caffeinate install` with no idle flag so the LaunchAgent returns to the 600 second threshold. It leaves the binary, the plist, the log, and `artifacts/verify/<UTC timestamp>/` in place. It kills only a foreground `arch-caffeinate run` whose pid the helper started. It does not unload the restored agent.
+The helper runs `arch-caffeinate install` with no idle flag so the LaunchAgent returns to the 600 second threshold. It waits until `status --json` reports `idleThresholdSeconds` 600 and the plist has no `--idle-seconds` argument. It leaves the binary, the plist, the log, and `artifacts/verify/<UTC timestamp>/` in place. It does not start a foreground `arch-caffeinate run`, and it does not unload the restored agent.
 
 ## Helpers
 
-`.cursor/skills/verify-arch-caffeinate/scripts/verify.sh` is the whole proof. It prints one `PASS` or `FAIL` line per V-number and exits 0 only when every line is `PASS`.
+`.cursor/skills/verify-arch-caffeinate/scripts/verify.sh` is the whole proof. It prints one `PASS` or `FAIL` line per V-number and exits 0 only when every line is `PASS`. V8 runs `scripts/test-install-from-clone.sh`. The helper does not run `scripts/check-public-hygiene.sh`.
+
+`scripts/test-verify.sh` stubs `pmset`, `ioreg`, `sysadminctl`, `launchctl`, `arch-caffeinate`, and Ghostty on a fake home directory. Set `VERIFY_POLL_SEC=0` so the waits do not sleep. A broken stub must exit non-zero and print `FAIL` for V1 through V8.
 
 After the CLI changes, run `/maintain-verification-skill` so the feature map stays aligned with [docs/cli-contract.md](../../../docs/cli-contract.md).
