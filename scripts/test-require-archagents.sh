@@ -72,4 +72,10 @@ if [[ $code -eq 0 && $out == *'will be blocked'* ]]; then pass 'session start re
 run session s8
 if [[ $code -eq 0 && $out == *passed* ]]; then pass 'session start reports a pass'; else bad 'session start reports a pass' "code=$code out=$out"; fi
 
+run pretool c1 STUB_LOGIN=GoddyB CURSOR_VERSION=3.0
+if [[ $code -eq 0 && $calls -eq 0 ]]; then pass 'a Cursor agent outside Claude Code is not gated'; else bad 'a Cursor agent outside Claude Code is not gated' "code=$code calls=$calls"; fi
+
+run pretool c2 STUB_LOGIN=GoddyB CURSOR_VERSION=3.0 CLAUDECODE=1
+if [[ $code -eq 2 ]]; then pass 'Claude Code inside Cursor is gated'; else bad 'Claude Code inside Cursor is gated' "code=$code err=$err"; fi
+
 exit $fail

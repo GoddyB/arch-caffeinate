@@ -7,6 +7,12 @@
 # so `gh auth switch` or a new token forces a fresh lookup.
 set -uo pipefail
 
+# Cursor also runs .claude/settings.json hooks and sets CURSOR_VERSION; Claude Code sets
+# CLAUDECODE. The rule is for Claude Code, so a Cursor agent outside Claude Code passes.
+if [[ -z ${CLAUDECODE:-} && -n ${CURSOR_VERSION:-} ]]; then
+  exit 0
+fi
+
 want=ArchAgents
 mode=${1:-pretool}
 input=$(cat)
