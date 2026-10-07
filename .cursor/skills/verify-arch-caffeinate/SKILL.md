@@ -11,7 +11,7 @@ Step 4 of create-verification-skill (prove end to end) runs on the owner's Mac a
 
 ## Launch
 
-On the owner's Mac, from the clone, run the helper. It installs the already-built binary with a 5 second idle threshold and waits until `state.json` has a fresh `writtenAt`.
+On the owner's Mac, from the clone, run the helper. It installs the already-built binary with `--idle-seconds 5`, then runs `arch-caffeinate doctor`.
 
 ```bash
 .cursor/skills/verify-arch-caffeinate/scripts/verify.sh
