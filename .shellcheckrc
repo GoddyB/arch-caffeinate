@@ -1,0 +1,2 @@
+# Functions passed to wait_for run indirectly, which shellcheck reports as unreachable.
+disable=SC2317

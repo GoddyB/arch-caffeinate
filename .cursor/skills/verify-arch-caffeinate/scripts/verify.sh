@@ -62,7 +62,6 @@ if [[ "$(uname -s)" != Darwin ]]; then
 fi
 
 LABEL="io.github.goddyb.arch-caffeinate"
-STATE="${HOME}/Library/Application Support/arch-caffeinate/state.json"
 PLIST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 BIN="$(bash -lc 'command -v arch-caffeinate' 2>>"$TRANSCRIPT" || true)"
 
