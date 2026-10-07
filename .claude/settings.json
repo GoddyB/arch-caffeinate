@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(gh auth switch:*)",
+      "Bash(gh auth login:*)",
+      "Bash(gh auth token:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/require-archagents.sh session",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/require-archagents.sh pretool",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
