@@ -153,7 +153,7 @@ func TestWakeAndRunFlags(t *testing.T) {
 		}
 	}
 	err = Run(context.Background(), []string{"run", "--idle-seconds", "0"}, opts)
-	if err == nil || err.Error() != "invalid value \"0\" for flag -idle-seconds: --idle-seconds needs a positive integer" {
+	if err == nil || err.Error() != "invalid value \"0\" for flag -idle-seconds: needs a positive integer" {
 		t.Fatalf("err %v", err)
 	}
 	err = Run(context.Background(), []string{"run", "--idle-seconds"}, opts)

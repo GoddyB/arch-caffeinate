@@ -20,7 +20,7 @@ func domainTarget(uid int) string {
 	return fmt.Sprintf("gui/%d", uid)
 }
 
-func install(ctx context.Context, opts Options, paths daemon.Paths, idle int, set bool) error {
+func install(ctx context.Context, opts Options, paths daemon.Paths, idle *int) error {
 	exe := opts.Executable
 	if exe == "" {
 		return fmt.Errorf("executable path is unknown")
@@ -28,11 +28,7 @@ func install(ctx context.Context, opts Options, paths daemon.Paths, idle int, se
 	if err := copyFile(exe, paths.Bin()); err != nil {
 		return err
 	}
-	var idleArg *int
-	if set {
-		idleArg = &idle
-	}
-	body := encodePlist(agentArgs(paths.Bin(), idleArg))
+	body := encodePlist(agentArgs(paths.Bin(), idle))
 	if err := daemon.WriteFileAtomic(paths.Plist(), body, 0o644); err != nil {
 		return err
 	}
@@ -104,27 +100,14 @@ func encodePlist(args []string) []byte {
 	var buf bytes.Buffer
 	buf.WriteString(xml.Header)
 	buf.WriteString(`<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">` + "\n")
-	buf.WriteString(`<plist version="1.0"><dict>` + "\n")
-	writeKey(&buf, "Label")
+	buf.WriteString("<plist version=\"1.0\"><dict>\n<key>Label</key>")
 	writeString(&buf, daemon.Label)
-	writeKey(&buf, "ProgramArguments")
-	buf.WriteString("<array>\n")
+	buf.WriteString("<key>ProgramArguments</key><array>\n")
 	for _, arg := range args {
 		writeString(&buf, arg)
 	}
-	buf.WriteString("</array>\n")
-	writeKey(&buf, "RunAtLoad")
-	buf.WriteString("<true/>\n")
-	writeKey(&buf, "KeepAlive")
-	buf.WriteString("<true/>\n")
-	buf.WriteString("</dict></plist>\n")
+	buf.WriteString("</array>\n<key>RunAtLoad</key><true/>\n<key>KeepAlive</key><true/>\n</dict></plist>\n")
 	return buf.Bytes()
-}
-
-func writeKey(buf *bytes.Buffer, key string) {
-	buf.WriteString("<key>")
-	_ = xml.EscapeText(buf, []byte(key))
-	buf.WriteString("</key>")
 }
 
 func writeString(buf *bytes.Buffer, value string) {
@@ -151,13 +134,21 @@ func installedIdle(paths daemon.Paths) int {
 	if err != nil {
 		return idle
 	}
-	args, err := programArguments(b)
-	if err != nil || len(args) < 2 || args[1] != "run" {
-		return idle
-	}
-	parsed, _, err := parseRunArgs(args[2:])
-	if err != nil {
+	parsed, ok := idleFromAgentArgs(b)
+	if !ok {
 		return idle
 	}
 	return parsed
+}
+
+func idleFromAgentArgs(data []byte) (int, bool) {
+	args, err := programArguments(data)
+	if err != nil || len(args) < 2 || args[1] != "run" {
+		return 0, false
+	}
+	parsed, _, err := parseRunArgs(args[2:])
+	if err != nil {
+		return 0, false
+	}
+	return parsed, true
 }

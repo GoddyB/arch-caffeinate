@@ -163,6 +163,7 @@ func (r Reading) Status() Status {
 		Display:     r.Display.String(),
 		IdleSeconds: r.Idle.Seconds(),
 		ScreenLock:  string(r.Lock),
+		Version:     Version,
 	}
 }
 
@@ -217,10 +218,7 @@ func tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.St
 		WrittenAt:            cfg.now().UnixMilli(),
 		PollMs:               int(cfg.Poll / time.Millisecond),
 	}
-	if err := writeState(paths, rec); err != nil {
-		return next, err
-	}
-	return next, nil
+	return next, writeState(paths, rec)
 }
 
 func apply(ctx context.Context, host Host, action core.Action) error {

@@ -50,6 +50,9 @@ func TestInstallPlistAndLaunch(t *testing.T) {
 	if got := mustArgs(t, first); !slices.Equal(got, []string{binPath, "run", "--idle-seconds", "5"}) {
 		t.Fatalf("args %v", got)
 	}
+	if !strings.Contains(first, "<key>RunAtLoad</key><true/>") || !strings.Contains(first, "<key>KeepAlive</key><true/>") {
+		t.Fatalf("plist flags\n%s", first)
+	}
 	if mustRead(t, binPath) != "payload" {
 		t.Fatal("binary")
 	}

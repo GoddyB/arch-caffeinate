@@ -10,7 +10,6 @@ import (
 )
 
 type positiveInt struct {
-	name  string
 	value int
 	set   bool
 }
@@ -22,7 +21,7 @@ func (p *positiveInt) String() string {
 func (p *positiveInt) Set(raw string) error {
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
-		return fmt.Errorf("--%s needs a positive integer", p.name)
+		return fmt.Errorf("needs a positive integer")
 	}
 	p.value = n
 	p.set = true
@@ -43,8 +42,8 @@ func parseFlags(name string, args []string, define func(*flag.FlagSet)) error {
 }
 
 func parseRunArgs(args []string) (idle int, poll int, err error) {
-	idleFlag := &positiveInt{name: "idle-seconds", value: daemon.DefaultIdleSeconds}
-	pollFlag := &positiveInt{name: "poll-ms", value: daemon.DefaultPollMs}
+	idleFlag := &positiveInt{value: daemon.DefaultIdleSeconds}
+	pollFlag := &positiveInt{value: daemon.DefaultPollMs}
 	err = parseFlags("run", args, func(fs *flag.FlagSet) {
 		fs.Var(idleFlag, "idle-seconds", "")
 		fs.Var(pollFlag, "poll-ms", "")
@@ -55,15 +54,19 @@ func parseRunArgs(args []string) (idle int, poll int, err error) {
 	return idleFlag.value, pollFlag.value, nil
 }
 
-func parseInstallArgs(args []string) (idle int, set bool, err error) {
-	idleFlag := &positiveInt{name: "idle-seconds"}
-	err = parseFlags("install", args, func(fs *flag.FlagSet) {
+func parseInstallArgs(args []string) (*int, error) {
+	idleFlag := &positiveInt{}
+	err := parseFlags("install", args, func(fs *flag.FlagSet) {
 		fs.Var(idleFlag, "idle-seconds", "")
 	})
 	if err != nil {
-		return 0, false, err
+		return nil, err
 	}
-	return idleFlag.value, idleFlag.set, nil
+	if !idleFlag.set {
+		return nil, nil
+	}
+	value := idleFlag.value
+	return &value, nil
 }
 
 func parseStatusArgs(args []string) (bool, error) {

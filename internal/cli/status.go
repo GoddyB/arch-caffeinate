@@ -35,11 +35,8 @@ func status(ctx context.Context, opts Options, paths daemon.Paths, asJSON bool) 
 	st.Running = saved.Live
 	st.SleepPrevented = saved.Live && saved.File.SleepPrevented
 	st.IdleThresholdSeconds = saved.Threshold
-	st.Version = daemon.Version
-	var pid *int
 	if saved.Live {
-		pid = saved.File.PID
-		st.PID = pid
+		st.PID = saved.File.PID
 	}
 	if asJSON {
 		b, err := json.Marshal(st)
@@ -50,8 +47,8 @@ func status(ctx context.Context, opts Options, paths daemon.Paths, asJSON bool) 
 		return nil
 	}
 	pidText := "null"
-	if pid != nil {
-		pidText = strconv.Itoa(*pid)
+	if st.PID != nil {
+		pidText = strconv.Itoa(*st.PID)
 	}
 	fmt.Fprintf(opts.Stdout, "running: %t\npid: %s\npower: %s\nsleepPrevented: %t\ndisplay: %s\nidleSeconds: %g\nidleThresholdSeconds: %d\nscreenLock: %s\nversion: %s\n",
 		st.Running, pidText, st.Power, st.SleepPrevented, st.Display, st.IdleSeconds, st.IdleThresholdSeconds, st.ScreenLock, st.Version)

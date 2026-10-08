@@ -21,7 +21,7 @@ func TestDoctorNotMacOS(t *testing.T) {
 	home := t.TempDir()
 	now := time.UnixMilli(1_700_000_000_000)
 	bin := filepath.Join(home, ".local", "bin", "arch-caffeinate")
-	writeFreshState(t, home, now.Add(-time.Second))
+	writeStateAt(t, home, now.Add(-time.Second).UnixMilli())
 	var buf strings.Builder
 	opts := Options{
 		Stdout: &buf,
@@ -63,7 +63,7 @@ func TestDoctorWarnIsSuccess(t *testing.T) {
 	home := t.TempDir()
 	now := time.UnixMilli(1_700_000_000_000)
 	bin := filepath.Join(home, "arch-caffeinate")
-	writeFreshState(t, home, now.Add(-time.Second))
+	writeStateAt(t, home, now.Add(-time.Second).UnixMilli())
 	var buf strings.Builder
 	opts := doctorOpts(home, now, bin, &buf)
 	opts.GOOS = "darwin"
@@ -178,11 +178,6 @@ func doctorOpts(home string, now time.Time, bin string, buf *strings.Builder) Op
 			return []byte("SERVICE DUMP\n"), nil
 		},
 	}
-}
-
-func writeFreshState(t *testing.T, home string, at time.Time) {
-	t.Helper()
-	writeStateAt(t, home, at.UnixMilli())
 }
 
 func writeStateAt(t *testing.T, home string, written int64) {

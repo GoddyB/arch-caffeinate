@@ -9,8 +9,7 @@ import (
 
 func TestAdvance(t *testing.T) {
 	cfg := Config{IdleThreshold: 600 * time.Second}
-	onAC := State{Display: DisplayOn}
-	offAC := State{Display: DisplayOn}
+	awake := State{Display: DisplayOn}
 	asleep := State{Display: DisplayOff}
 	open := Observation{IdleKnown: true, SleepHeld: false, Power: PowerAC}
 
@@ -23,21 +22,21 @@ func TestAdvance(t *testing.T) {
 	}{
 		{
 			name: "ac to battery releases the assertion",
-			s:    onAC,
+			s:    awake,
 			o:    Observation{IdleKnown: true, SleepHeld: true, Power: PowerBattery, HIDIdle: time.Second},
-			want: offAC,
+			want: awake,
 			acts: []Action{ReleaseSleepAssertion},
 		},
 		{
 			name: "battery to ac acquires the assertion",
-			s:    offAC,
+			s:    awake,
 			o:    open,
-			want: onAC,
+			want: awake,
 			acts: []Action{AcquireSleepAssertion},
 		},
 		{
 			name: "idle crossing the threshold turns the display off once",
-			s:    onAC,
+			s:    awake,
 			o:    Observation{IdleKnown: true, SleepHeld: true, Power: PowerAC, HIDIdle: 600 * time.Second},
 			want: State{Display: DisplayOff},
 			acts: []Action{TurnDisplayOff},
@@ -52,20 +51,20 @@ func TestAdvance(t *testing.T) {
 			name: "activity after off turns the display on",
 			s:    asleep,
 			o:    Observation{IdleKnown: true, SleepHeld: true, Power: PowerAC, HIDIdle: 10 * time.Second},
-			want: onAC,
+			want: awake,
 		},
 		{
 			name: "notification after off declares activity and turns the display on",
 			s:    asleep,
 			o:    Observation{IdleKnown: true, SleepHeld: true, Power: PowerAC, HIDIdle: 900 * time.Second, NotificationDelivered: true},
-			want: onAC,
+			want: awake,
 			acts: []Action{DeclareActivity},
 		},
 		{
 			name: "notification during high idle keeps the display on",
-			s:    onAC,
+			s:    awake,
 			o:    Observation{IdleKnown: true, SleepHeld: true, Power: PowerAC, HIDIdle: 900 * time.Second, NotificationDelivered: true},
-			want: onAC,
+			want: awake,
 			acts: []Action{DeclareActivity},
 		},
 		{
@@ -77,9 +76,9 @@ func TestAdvance(t *testing.T) {
 		},
 		{
 			name: "unknown power releases a held assertion",
-			s:    onAC,
+			s:    awake,
 			o:    Observation{IdleKnown: true, SleepHeld: true, Power: PowerUnknown, HIDIdle: time.Second},
-			want: offAC,
+			want: awake,
 			acts: []Action{ReleaseSleepAssertion},
 		},
 		{
@@ -98,14 +97,14 @@ func TestAdvance(t *testing.T) {
 			name: "notification with unknown idle is declared",
 			s:    asleep,
 			o:    Observation{SleepHeld: true, Power: PowerAC, NotificationDelivered: true},
-			want: onAC,
+			want: awake,
 			acts: []Action{DeclareActivity},
 		},
 		{
 			name: "a failed declare stays owed until it succeeds",
 			s:    State{Display: DisplayOff, WakeOwed: true},
 			o:    Observation{IdleKnown: true, SleepHeld: true, Power: PowerAC, HIDIdle: 900 * time.Second},
-			want: onAC,
+			want: awake,
 			acts: []Action{DeclareActivity},
 		},
 		{

@@ -47,17 +47,18 @@ finish() {
   exit 1
 }
 
+fail_all() {
+  local reason="$1"
+  local id
+  for id in V1 V2 V3 V4 V5 V6 V7 V8; do
+    mark FAIL "$id" "$reason"
+  done
+  finish
+}
+
 not_macos() {
   line "FAIL doctor not macOS"
-  mark FAIL V1 "not macOS"
-  mark FAIL V2 "not macOS"
-  mark FAIL V3 "not macOS"
-  mark FAIL V4 "not macOS"
-  mark FAIL V5 "not macOS"
-  mark FAIL V6 "not macOS"
-  mark FAIL V7 "not macOS"
-  mark FAIL V8 "not macOS"
-  finish
+  fail_all "not macOS"
 }
 
 if [[ "$(uname -s)" != Darwin ]]; then
@@ -71,15 +72,7 @@ BIN="$(bash -lc 'command -v arch-caffeinate' 2>>"$TRANSCRIPT" || true)"
 
 missing_cli() {
   line "FAIL doctor arch-caffeinate is not on PATH in a login bash"
-  mark FAIL V1 "arch-caffeinate is not on PATH"
-  mark FAIL V2 "arch-caffeinate is not on PATH"
-  mark FAIL V3 "arch-caffeinate is not on PATH"
-  mark FAIL V4 "arch-caffeinate is not on PATH"
-  mark FAIL V5 "arch-caffeinate is not on PATH"
-  mark FAIL V6 "arch-caffeinate is not on PATH"
-  mark FAIL V7 "arch-caffeinate is not on PATH"
-  mark FAIL V8 "arch-caffeinate is not on PATH"
-  finish
+  fail_all "arch-caffeinate is not on PATH"
 }
 
 if [[ -z "$BIN" ]]; then
@@ -218,7 +211,6 @@ if "$BIN" install --idle-seconds 5 >>"$TRANSCRIPT" 2>&1; then
   fi
 fi
 
-state_is_fresh || true
 if wait_until 3 state_is_fresh; then
   line "PASS heartbeat writtenAt is fresh"
 else
@@ -410,7 +402,6 @@ threshold_is_600() {
   [[ "$(json_get "$OUT/status-after-cleanup.json" idleThresholdSeconds 2>>"$TRANSCRIPT" || true)" == "600" ]]
 }
 restored_ok=0
-threshold_is_600 || true
 if wait_until 3 threshold_is_600; then
   restored_ok=1
 fi

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -190,7 +191,7 @@ func TestTickRetriesFailedDisplayOff(t *testing.T) {
 		t.Fatalf("display %s", state.Display)
 	}
 	want := []core.Action{core.TurnDisplayOff, core.TurnDisplayOff}
-	if len(host.actions) != len(want) || host.actions[0] != want[0] || host.actions[1] != want[1] {
+	if !slices.Equal(host.actions, want) {
 		t.Fatalf("actions %v", host.actions)
 	}
 }
@@ -221,7 +222,7 @@ func TestTickRetriesFailedDeclare(t *testing.T) {
 	if state.WakeOwed || state.Display != core.DisplayOn {
 		t.Fatalf("state %#v", state)
 	}
-	if len(host.actions) != 2 || host.actions[0] != core.DeclareActivity || host.actions[1] != core.DeclareActivity {
+	if !slices.Equal(host.actions, []core.Action{core.DeclareActivity, core.DeclareActivity}) {
 		t.Fatalf("actions %v", host.actions)
 	}
 	state, err = tick(context.Background(), host, Paths{Home: home}, cfg, state)
@@ -270,7 +271,7 @@ func TestTickPowerErrorReleases(t *testing.T) {
 	if state.Display != core.DisplayOn || st.SleepPrevented {
 		t.Fatalf("state %#v status %+v", state, st)
 	}
-	if len(host.actions) != 1 || host.actions[0] != core.ReleaseSleepAssertion {
+	if !slices.Equal(host.actions, []core.Action{core.ReleaseSleepAssertion}) {
 		t.Fatalf("actions %v", host.actions)
 	}
 }
@@ -340,7 +341,7 @@ func TestRunReleasesOnExit(t *testing.T) {
 	if err := Run(ctx, host, Paths{Home: home}, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if len(host.actions) != 2 || host.actions[0] != core.AcquireSleepAssertion || host.actions[1] != core.ReleaseSleepAssertion {
+	if !slices.Equal(host.actions, []core.Action{core.AcquireSleepAssertion, core.ReleaseSleepAssertion}) {
 		t.Fatalf("actions %v", host.actions)
 	}
 }
@@ -383,7 +384,7 @@ func TestRunReturnsWhenNotificationsEnd(t *testing.T) {
 	if err == nil || err.Error() != "log stream exited" {
 		t.Fatalf("err %v", err)
 	}
-	if len(host.actions) != 2 || host.actions[0] != core.AcquireSleepAssertion || host.actions[1] != core.ReleaseSleepAssertion {
+	if !slices.Equal(host.actions, []core.Action{core.AcquireSleepAssertion, core.ReleaseSleepAssertion}) {
 		t.Fatalf("actions %v", host.actions)
 	}
 }

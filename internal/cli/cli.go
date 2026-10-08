@@ -108,11 +108,11 @@ func Run(ctx context.Context, args []string, opts Options) error {
 	}
 	switch cmd {
 	case "install":
-		idle, set, err := parseInstallArgs(rest)
+		idle, err := parseInstallArgs(rest)
 		if err != nil {
 			return err
 		}
-		return install(ctx, opts, paths, idle, set)
+		return install(ctx, opts, paths, idle)
 	case "uninstall":
 		return uninstall(ctx, opts, paths)
 	case "start":
