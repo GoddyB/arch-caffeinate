@@ -243,7 +243,7 @@ prepare() {
 wait
 EOF
     chmod +x "$work/parent.sh"
-    "$work/parent.sh" &
+    "$work/parent.sh" >/dev/null 2>&1 &
     echo $! >"$fix/parent_pid"
     local child=""
     local i=0
@@ -310,10 +310,13 @@ drive() {
 stop_parent() {
   local work="$1"
   if [[ -f "$work/fixture/parent_pid" ]]; then
-    kill "$(cat "$work/fixture/parent_pid")" 2>/dev/null || true
-    pkill -P "$(cat "$work/fixture/parent_pid")" 2>/dev/null || true
+    local parent
+    parent="$(cat "$work/fixture/parent_pid")"
+    pkill -P "$parent" 2>/dev/null || true
+    kill "$parent" 2>/dev/null || true
   fi
 }
+trap 'stop_parent "${HOME_RUN:-}"; stop_parent "${BANNER_RUN:-}"; stop_parent "${DOCTOR_RUN:-}"' EXIT
 
 set +e
 healthy_log="$(mktemp)"
