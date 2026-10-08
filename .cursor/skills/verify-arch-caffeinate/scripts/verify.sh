@@ -15,7 +15,10 @@ INSTALL_TEST="${VERIFY_INSTALL_TEST:-$ROOT/scripts/test-install-from-clone.sh}"
 public_path() {
   case "$1" in
     "$ROOT"/*) printf '%s' "${1#"$ROOT"/}" ;;
-    "$HOME"/*) printf '%s/%s' "$(printf '\176')" "${1#"$HOME"/}" ;;
+    "$HOME"/*)
+      # shellcheck disable=SC2088 # tilde is the published path prefix, not a home expansion
+      printf '~/%s' "${1#"$HOME"/}"
+      ;;
     "") printf '%s' empty ;;
     *) printf '%s' "$(basename "$1")" ;;
   esac
