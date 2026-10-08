@@ -49,3 +49,8 @@ jobs:
           if [ -x scripts/test-install-from-clone.sh ]; then
             scripts/test-install-from-clone.sh
           fi
+      - name: Verify helper stub
+        run: |
+          if [ -x .cursor/skills/verify-arch-caffeinate/scripts/test-verify.sh ]; then
+            .cursor/skills/verify-arch-caffeinate/scripts/test-verify.sh
+          fi
