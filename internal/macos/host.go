@@ -125,6 +125,29 @@ func (s *System) DeclareActivity(ctx context.Context) error {
 	return s.command(ctx, "caffeinate", "-u", "-t", "1").Run()
 }
 
+type lastLine struct {
+	mu   sync.Mutex
+	line string
+}
+
+func (w *lastLine) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			w.line = line
+		}
+	}
+	return len(p), nil
+}
+
+func (w *lastLine) Line() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.line
+}
+
 func (s *System) StartNotifications(ctx context.Context) (<-chan error, error) {
 	cmd := s.command(ctx, "/usr/bin/log", "stream", "--style", "ndjson", "--predicate",
 		`process == "usernoted" AND subsystem == "com.apple.unc" AND eventMessage BEGINSWITH "Delivering "`)
@@ -132,25 +155,13 @@ func (s *System) StartNotifications(ctx context.Context) (<-chan error, error) {
 	if err != nil {
 		return nil, err
 	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, err
-	}
+	stderr := &lastLine{}
+	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 	done := make(chan error, 1)
 	go func() {
-		var last string
-		var stderrDone sync.WaitGroup
-		errLines := bufio.NewScanner(stderr)
-		stderrDone.Add(1)
-		go func() {
-			defer stderrDone.Done()
-			for errLines.Scan() {
-				last = errLines.Text()
-			}
-		}()
 		sc := bufio.NewScanner(stdout)
 		for sc.Scan() {
 			if ParseNotification(sc.Text()) {
@@ -160,12 +171,11 @@ func (s *System) StartNotifications(ctx context.Context) (<-chan error, error) {
 			}
 		}
 		waitErr := cmd.Wait()
-		stderrDone.Wait()
 		if ctx.Err() != nil {
 			close(done)
 			return
 		}
-		line := strings.TrimSpace(last)
+		line := stderr.Line()
 		switch {
 		case line != "":
 			done <- fmt.Errorf("log stream: %s", line)

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,6 +45,24 @@ func TestAcquireSleepUsesSystemAssertion(t *testing.T) {
 	want := []string{"caffeinate", "-s", "-w", strconv.Itoa(os.Getpid())}
 	if !slices.Equal(got, want) {
 		t.Fatalf("args %v", got)
+	}
+}
+
+func TestStartNotificationsKeepsAdminStderr(t *testing.T) {
+	s := &System{execCmd: func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "sh", "-c", `echo "Must be admin to run 'stream' command" >&2; exit 64`)
+	}}
+	ch, err := s.StartNotifications(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-ch:
+		if err == nil || !strings.Contains(err.Error(), "Must be admin to run 'stream' command") {
+			t.Fatalf("err %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout")
 	}
 }
 
