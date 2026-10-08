@@ -65,6 +65,7 @@ type Config struct {
 	Now           func() time.Time
 	Logf          func(string, ...any)
 	NoteBackoff   time.Duration
+	NoteCap       time.Duration
 }
 
 type faults struct {
@@ -73,9 +74,6 @@ type faults struct {
 }
 
 func (f *faults) report(name string, err error) {
-	if f == nil {
-		return
-	}
 	if f.prev == nil {
 		f.prev = map[string]string{}
 	}
@@ -99,9 +97,6 @@ func (f *faults) report(name string, err error) {
 }
 
 func (f *faults) drop(name string) {
-	if f == nil || f.prev == nil {
-		return
-	}
 	delete(f.prev, name)
 }
 
@@ -201,8 +196,11 @@ func alive(pid int) bool {
 	return proc.Signal(syscall.Signal(0)) == nil
 }
 
-func tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.State, fl *faults) (core.State, error) {
+func tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.State, fl *faults, notes *stream) core.State {
 	note := host.TakeNotification()
+	if note {
+		notes.sawLine()
+	}
 	power, powerErr := host.Power(ctx)
 	if powerErr != nil {
 		power = core.PowerUnknown
@@ -227,11 +225,12 @@ func tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.St
 		fl.report(action.String(), err)
 		return err
 	})
-	for _, action := range []core.Action{core.AcquireSleepAssertion, core.ReleaseSleepAssertion, core.TurnDisplayOff, core.DeclareActivity} {
+	for _, action := range core.Actions() {
 		if !emitted[action] {
 			fl.drop(action.String())
 		}
 	}
+	notes.prove(time.Now())
 	pid := os.Getpid()
 	rec := StateFile{
 		PID:                  &pid,
@@ -241,7 +240,7 @@ func tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.St
 		PollMs:               int(cfg.Poll / time.Millisecond),
 	}
 	fl.report("state", writeState(paths, rec))
-	return next, nil
+	return next
 }
 
 func apply(ctx context.Context, host Host, action core.Action) error {
@@ -308,87 +307,115 @@ func (c Config) noteBase() time.Duration {
 	return time.Second
 }
 
-func Run(ctx context.Context, host Host, paths Paths, cfg Config) error {
+func (c Config) noteCap() time.Duration {
+	if c.NoteCap > 0 {
+		return c.NoteCap
+	}
+	return 60 * time.Second
+}
+
+type stream struct {
+	host    Host
+	fl      *faults
+	base    time.Duration
+	cap     time.Duration
+	notes   <-chan error
+	retry   <-chan time.Time
+	delay   time.Duration
+	opened  time.Time
+	healthy bool
+}
+
+func (s *stream) open(ctx context.Context) {
+	if s.notes != nil || s.retry != nil {
+		return
+	}
+	ch, err := s.host.StartNotifications(ctx)
+	if err != nil {
+		s.failed(err)
+		return
+	}
+	s.notes = ch
+	s.opened = time.Now()
+	s.healthy = false
+}
+
+func (s *stream) failed(err error) {
+	s.notes = nil
+	s.healthy = false
+	s.fl.report("notifications", err)
+	if s.delay == 0 {
+		s.delay = s.base
+	} else {
+		s.delay *= 2
+	}
+	if s.delay > s.cap {
+		s.delay = s.cap
+	}
+	s.retry = time.After(s.delay)
+}
+
+func (s *stream) exited(err error, ok bool) {
+	wasHealthy := s.healthy
+	s.notes = nil
+	if wasHealthy {
+		s.delay = 0
+	}
+	if !ok || err == nil {
+		err = fmt.Errorf("log stream exited")
+	}
+	s.failed(err)
+}
+
+func (s *stream) sawLine() {
+	if s == nil || s.notes == nil || s.healthy {
+		return
+	}
+	s.markHealthy()
+}
+
+func (s *stream) prove(now time.Time) {
+	if s == nil || s.notes == nil || s.healthy {
+		return
+	}
+	if now.Sub(s.opened) >= s.cap {
+		s.markHealthy()
+	}
+}
+
+func (s *stream) markHealthy() {
+	s.healthy = true
+	s.delay = 0
+	s.fl.report("notifications", nil)
+}
+
+func Run(ctx context.Context, host Host, paths Paths, cfg Config) {
 	if cfg.Logf == nil {
 		cfg.Logf = func(format string, args ...any) {
 			AppendLog(paths, fmt.Sprintf(format, args...))
 		}
 	}
 	fl := &faults{logf: cfg.logf}
-	base := cfg.noteBase()
-	capDelay := 60 * time.Second
-	var notes <-chan error
-	var delay time.Duration
-	waiting := false
-	arm := func() {
-		if delay == 0 {
-			delay = base
-		} else {
-			delay *= 2
-		}
-		if delay > capDelay {
-			delay = capDelay
-		}
-		waiting = true
-	}
-	openStream := func() {
-		if notes != nil || waiting {
-			return
-		}
-		ch, err := host.StartNotifications(ctx)
-		if err != nil {
-			fl.report("notifications", err)
-			arm()
-			return
-		}
-		notes = ch
-		delay = 0
-		fl.report("notifications", nil)
-	}
+	notes := &stream{host: host, fl: fl, base: cfg.noteBase(), cap: cfg.noteCap()}
 	var state core.State
-	step := func() {
-		state, _ = tick(ctx, host, paths, cfg, state, fl)
-	}
-	openStream()
-	step()
+	poll := time.NewTicker(cfg.Poll)
+	defer poll.Stop()
+	notes.open(ctx)
+	state = tick(ctx, host, paths, cfg, state, fl, notes)
 	for {
-		var retry <-chan time.Time
-		var retryTimer *time.Timer
-		if waiting {
-			retryTimer = time.NewTimer(delay)
-			retry = retryTimer.C
-		}
-		pollTimer := time.NewTimer(cfg.Poll)
 		select {
 		case <-ctx.Done():
-			pollTimer.Stop()
-			if retryTimer != nil {
-				retryTimer.Stop()
-			}
 			if relErr := host.ReleaseSleep(ctx); relErr != nil {
 				cfg.logf("release: %v", relErr)
 			}
-			return nil
-		case err, ok := <-notes:
-			pollTimer.Stop()
-			if retryTimer != nil {
-				retryTimer.Stop()
-			}
-			notes = nil
-			if !ok || err == nil {
-				err = fmt.Errorf("log stream exited")
-			}
-			fl.report("notifications", err)
-			arm()
-		case <-pollTimer.C:
-			if retryTimer != nil {
-				retryTimer.Stop()
-			}
-			step()
-		case <-retry:
-			pollTimer.Stop()
-			waiting = false
-			openStream()
+			return
+		case err, ok := <-notes.notes:
+			notes.exited(err, ok)
+		case <-notes.retry:
+			notes.retry = nil
+			notes.open(ctx)
+		case <-poll.C:
+			state = tick(ctx, host, paths, cfg, state, fl, notes)
 		}
 	}
 }

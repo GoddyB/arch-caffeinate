@@ -36,7 +36,7 @@ jobs:
       - name: go test
         run: |
           if [ -f go.mod ]; then
-            go test ./...
+            go test -race -count=30 ./...
           fi
       - name: shellcheck
         run: |

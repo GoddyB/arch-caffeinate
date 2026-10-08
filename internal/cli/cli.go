@@ -129,7 +129,8 @@ func Run(ctx context.Context, args []string, opts Options) error {
 			Poll:          time.Duration(poll) * time.Millisecond,
 			Now:           opts.Now,
 		}
-		return daemon.Run(ctx, opts.Host, paths, cfg)
+		daemon.Run(ctx, opts.Host, paths, cfg)
+		return nil
 	case "status":
 		asJSON, err := parseStatusArgs(rest)
 		if err != nil {

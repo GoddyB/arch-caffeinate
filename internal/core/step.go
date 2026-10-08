@@ -76,6 +76,10 @@ const (
 	DeclareActivity
 )
 
+func Actions() []Action {
+	return []Action{AcquireSleepAssertion, ReleaseSleepAssertion, TurnDisplayOff, DeclareActivity}
+}
+
 func (a Action) String() string {
 	switch a {
 	case AcquireSleepAssertion:
