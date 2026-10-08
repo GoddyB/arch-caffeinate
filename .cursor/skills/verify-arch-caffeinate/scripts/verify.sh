@@ -12,6 +12,15 @@ FAILS=0
 POLL_SEC="${VERIFY_POLL_SEC:-1}"
 INSTALL_TEST="${VERIFY_INSTALL_TEST:-$ROOT/scripts/test-install-from-clone.sh}"
 
+public_path() {
+  case "$1" in
+    "$ROOT"/*) printf '%s' "${1#"$ROOT"/}" ;;
+    "$HOME"/*) printf '%s/%s' "$(printf '\176')" "${1#"$HOME"/}" ;;
+    "") printf '%s' empty ;;
+    *) printf '%s' "$(basename "$1")" ;;
+  esac
+}
+
 line() {
   printf '%s\n' "$1" | tee -a "$TRANSCRIPT"
 }
@@ -249,7 +258,7 @@ pid="$(json_get "$OUT/status.json" pid 2>>"$TRANSCRIPT" || echo none)"
 child="$(pgrep -P "$pid" -x caffeinate 2>>"$TRANSCRIPT" | head -n 1 || true)"
 if [[ "$power" == "ac" && "$prevented" == "true" && -n "$child" ]] \
   && grep -Eq '^ *PreventSystemSleep +[1-9][0-9]*$' "$OUT/assertions.txt" \
-  && grep -Eq "pid ${child}\\(caffeinate\\):" "$OUT/assertions.txt"; then
+  && grep -Eq "pid ${child}\\(caffeinate\\):.*PreventSystemSleep" "$OUT/assertions.txt"; then
   mark PASS V1 "PreventSystemSleep lists pid ${child}(caffeinate) while power is ac and sleepPrevented is true"
 elif [[ "$power" == "battery" ]]; then
   mark FAIL V1 "power is battery; releasing the assertion on battery is a manual gap"
@@ -303,8 +312,11 @@ fresh_daemon() {
 }
 note_while_started=0
 if wait_until 8 running_is && fresh_daemon; then
-  osascript -e 'display notification "verify" with title "arch-caffeinate"' >>"$TRANSCRIPT" 2>&1 || true
-  if wait_until 3 display_is on; then
+  note_on() {
+    osascript -e 'display notification "verify" with title "arch-caffeinate"' >>"$TRANSCRIPT" 2>&1 || true
+    display_is on
+  }
+  if wait_until 3 note_on; then
     note_while_started=1
   fi
 fi
@@ -335,9 +347,9 @@ fi
 resolved_version="$(bash -lc 'arch-caffeinate --version' 2>>"$TRANSCRIPT" || true)"
 bin_version="$("$BIN" --version 2>>"$TRANSCRIPT" || true)"
 if [[ "$BIN" == "$HOME/.local/bin/arch-caffeinate" && -n "$bin_version" && "$resolved_version" == "$bin_version" ]]; then
-  mark PASS V5 "login bash runs $HOME/.local/bin/arch-caffeinate and --version matches"
+  mark PASS V5 "login bash runs ~/.local/bin/arch-caffeinate and --version matches"
 else
-  mark FAIL V5 "login bash resolved ${BIN:-empty}"
+  mark FAIL V5 "login bash resolved $(public_path "${BIN:-}")"
 fi
 
 GHOSTTY=""
@@ -388,12 +400,13 @@ else
 fi
 
 v8_out="$OUT/v8.txt"
+v8_label="$(public_path "$INSTALL_TEST")"
 if [[ -x "$INSTALL_TEST" ]] && "$INSTALL_TEST" >"$v8_out" 2>&1; then
   cat "$v8_out" >>"$TRANSCRIPT"
-  mark PASS V8 "$INSTALL_TEST exited 0"
+  mark PASS V8 "$v8_label exited 0"
 else
   cat "$v8_out" >>"$TRANSCRIPT" 2>/dev/null || true
-  mark FAIL V8 "$INSTALL_TEST failed"
+  mark FAIL V8 "$v8_label failed"
 fi
 
 "$BIN" install >>"$TRANSCRIPT" 2>&1 || true

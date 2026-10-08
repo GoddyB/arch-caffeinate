@@ -2,7 +2,10 @@ package macos
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -25,6 +28,22 @@ func TestScreenLockReadsStatusPhrase(t *testing.T) {
 	got, err = s.ScreenLock(context.Background())
 	if err != nil || got != core.ScreenLockUnknown {
 		t.Fatalf("usage got %s err %v", got, err)
+	}
+}
+
+func TestAcquireSleepUsesSystemAssertion(t *testing.T) {
+	var got []string
+	s := &System{execCmd: func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		got = append([]string{name}, args...)
+		return exec.CommandContext(ctx, "sleep", "30")
+	}}
+	if err := s.AcquireSleep(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.ReleaseSleep(context.Background()) })
+	want := []string{"caffeinate", "-s", "-w", strconv.Itoa(os.Getpid())}
+	if !slices.Equal(got, want) {
+		t.Fatalf("args %v", got)
 	}
 }
 
