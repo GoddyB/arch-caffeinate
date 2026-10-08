@@ -3,7 +3,9 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -50,8 +52,9 @@ func TestInstallPlistAndLaunch(t *testing.T) {
 	if got := mustArgs(t, first); !slices.Equal(got, []string{binPath, "run", "--idle-seconds", "5"}) {
 		t.Fatalf("args %v", got)
 	}
-	if !strings.Contains(first, "<key>RunAtLoad</key><true/>") || !strings.Contains(first, "<key>KeepAlive</key><true/>") {
-		t.Fatalf("plist flags\n%s", first)
+	runAtLoad, keepAlive := plistBools(t, first)
+	if !runAtLoad || !keepAlive {
+		t.Fatalf("RunAtLoad %v KeepAlive %v", runAtLoad, keepAlive)
 	}
 	if mustRead(t, binPath) != "payload" {
 		t.Fatal("binary")
@@ -135,6 +138,39 @@ func TestStartStop(t *testing.T) {
 
 func joinArgs(args []string) string {
 	return strings.Join(args, " ")
+}
+
+func plistBools(t *testing.T, body string) (runAtLoad bool, keepAlive bool) {
+	t.Helper()
+	dec := xml.NewDecoder(strings.NewReader(body))
+	var key string
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			return runAtLoad, keepAlive
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		el, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		switch el.Name.Local {
+		case "key":
+			if err := dec.DecodeElement(&key, &el); err != nil {
+				t.Fatal(err)
+			}
+		case "true":
+			switch key {
+			case "RunAtLoad":
+				runAtLoad = true
+			case "KeepAlive":
+				keepAlive = true
+			}
+			key = ""
+		}
+	}
 }
 
 func mustArgs(t *testing.T, body string) []string {

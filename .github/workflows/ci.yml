@@ -45,12 +45,6 @@ jobs:
             shellcheck "${files[@]}"
           fi
       - name: Install from clone
-        run: |
-          if [ -x scripts/test-install-from-clone.sh ]; then
-            scripts/test-install-from-clone.sh
-          fi
+        run: scripts/test-install-from-clone.sh
       - name: Verify helper stub
-        run: |
-          if [ -x .cursor/skills/verify-arch-caffeinate/scripts/test-verify.sh ]; then
-            .cursor/skills/verify-arch-caffeinate/scripts/test-verify.sh
-          fi
+        run: .cursor/skills/verify-arch-caffeinate/scripts/test-verify.sh

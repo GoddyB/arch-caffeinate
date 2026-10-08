@@ -97,7 +97,6 @@ write_state() {
   python3 - "$fix" "$state_dir/state.json" "$VERIFY_MODE" <<'PY'
 import json, os, sys, time
 fix, dest, mode = sys.argv[1:]
-display = open(os.path.join(fix, "display")).read().strip()
 cleanup = os.path.exists(os.path.join(fix, "cleanup"))
 agent_path = os.path.join(fix, "agent_mode")
 agent = open(agent_path).read().strip() if os.path.exists(agent_path) else ""
@@ -107,34 +106,45 @@ if not os.path.exists(pid_path):
 if mode == "healthy":
     running = agent == "started"
     payload = {
-        "running": running,
         "pid": int(open(pid_path).read()) if running else None,
-        "power": "ac",
         "sleepPrevented": True,
-        "display": "on" if display == "1" else "off",
-        "idleSeconds": 6,
         "idleThresholdSeconds": 600 if cleanup else 5,
-        "screenLock": "off",
-        "version": "0.1.0",
         "writtenAt": int(time.time() * 1000),
         "pollMs": 1000,
     }
 else:
     payload = {
-        "running": False,
         "pid": None,
-        "power": "ac",
         "sleepPrevented": False,
-        "display": "on" if display == "1" else "off",
-        "idleSeconds": 0,
         "idleThresholdSeconds": 5,
-        "screenLock": "immediate",
-        "version": "0.1.0",
         "writtenAt": 0,
         "pollMs": 1000,
     }
 with open(dest, "w") as f:
     json.dump(payload, f)
+PY
+}
+
+print_status() {
+  python3 - "$fix" "$state_dir/state.json" "$VERIFY_MODE" <<'PY'
+import json, os, sys
+fix, path, mode = sys.argv[1:]
+display = open(os.path.join(fix, "display")).read().strip()
+saved = json.load(open(path))
+written = saved.get("writtenAt") or 0
+poll = saved.get("pollMs") or 0
+live = mode == "healthy" and isinstance(written, (int, float)) and written > 0 and poll > 0
+print(json.dumps({
+    "running": live,
+    "pid": saved.get("pid") if live else None,
+    "power": "ac",
+    "sleepPrevented": bool(saved.get("sleepPrevented")) if live else False,
+    "display": "on" if display == "1" else "off",
+    "idleSeconds": 6 if mode == "healthy" else 0,
+    "idleThresholdSeconds": saved.get("idleThresholdSeconds"),
+    "screenLock": "off" if mode == "healthy" else "immediate",
+    "version": "0.1.0",
+}))
 PY
 }
 
@@ -184,8 +194,7 @@ case "$cmd" in
       printf '%s\n' started >"$fix/agent_mode"
     fi
     write_state
-    cat "$state_dir/state.json"
-    printf '\n'
+    print_status
     ;;
   wake)
     if [[ "$VERIFY_MODE" == "healthy" ]]; then
@@ -316,7 +325,15 @@ stop_parent() {
     kill "$parent" 2>/dev/null || true
   fi
 }
-trap 'stop_parent "${HOME_RUN:-}"; stop_parent "${BANNER_RUN:-}"; stop_parent "${DOCTOR_RUN:-}"' EXIT
+cleanup_runs() {
+  stop_parent "${HOME_RUN:-}"
+  stop_parent "${BROKEN_RUN:-}"
+  stop_parent "${BANNER_RUN:-}"
+  stop_parent "${DOCTOR_RUN:-}"
+  rm -rf "${HOME_RUN:-}" "${BROKEN_RUN:-}" "${BANNER_RUN:-}" "${DOCTOR_RUN:-}"
+  rm -f "${healthy_log:-}" "${broken_log:-}" "${banner_log:-}" "${doctor_log:-}"
+}
+trap cleanup_runs EXIT
 
 set +e
 healthy_log="$(mktemp)"
