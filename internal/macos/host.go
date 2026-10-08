@@ -120,12 +120,7 @@ func (s *System) DisplayOff(ctx context.Context) error {
 }
 
 func (s *System) DeclareActivity(ctx context.Context) error {
-	cmd := s.command(ctx, "caffeinate", "-u", "-t", "1")
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	go func() { _ = cmd.Wait() }()
-	return nil
+	return s.command(ctx, "caffeinate", "-u", "-t", "1").Run()
 }
 
 func (s *System) StartNotifications(ctx context.Context, logf func(string, ...any)) error {
