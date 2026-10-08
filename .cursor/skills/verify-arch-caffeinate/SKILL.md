@@ -29,7 +29,7 @@ Read [features/README.md](features/README.md), then the feature file for the V-n
 
 Observable commands, copied into the evidence directory:
 
-- `pmset -g assertions` shows a `PreventSystemSleep` assertion owned by the daemon while `power` is `ac`.
+- `pmset -g assertions` shows `PreventSystemSleep` from the daemon's `caffeinate -s` child while `power` is `ac`. A count above 1 still passes when that child is listed.
 - `ioreg -r -d 1 -c AppleCLCD2` shows `"CurrentPowerState"=1` while the display is on and `0` while it is off. V2 and V3 require that reading. `status --json` reports the same value in `display`.
 - `ioreg -c IOHIDSystem` shows `HIDIdleTime`.
 - `sysadminctl -screenLock status` shows the screen-lock setting.

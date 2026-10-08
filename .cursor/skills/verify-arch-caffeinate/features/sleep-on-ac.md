@@ -19,12 +19,12 @@ Preconditions:
 - `arch-caffeinate doctor` has no `FAIL` line.
 - `arch-caffeinate status --json` reports `"power": "ac"`. If `power` is `battery`, V1 is `FAIL` with that value. Do not pretend AC.
 
-- **Read assertions.** Run `pmset -g assertions`. Pass only when a line matches `PreventSystemSleep` with a count of 1, and a `pid N(caffeinate):` line names a child of the daemon pid from `status --json` (`pgrep -P <pid> -x caffeinate`).
+- **Read assertions.** Run `pmset -g assertions`. Pass when `PreventSystemSleep` has a count of at least 1, and a `pid N(caffeinate):` line for a child of the daemon pid (`pgrep -P <pid> -x caffeinate`) contains `PreventSystemSleep`. A count above 1 does not fail V1.
 - **Read status.** Run `arch-caffeinate status --json`. `sleepPrevented` is `true` in that same moment.
 - **Proof.** Save both outputs under `artifacts/verify/<timestamp>/`. The assertion listing is the proof.
 
 ## Gotchas
 
-- `caffeinate` from another program can add its own assertion. Match the daemon pid.
+- `caffeinate` from another program can raise the `PreventSystemSleep` count. The child line is the attribution. A count above 1 does not fail V1.
 - A `status` bool without the `pmset` listing is not V1.
 - Battery fails V1 for this run. Releasing the assertion on battery is a manual gap. A remote session cannot unplug the Mac.

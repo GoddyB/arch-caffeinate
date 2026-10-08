@@ -153,6 +153,40 @@ hold_display() {
   return 0
 }
 
+hid_ns() {
+  python3 - "$1" <<'PY'
+import re, sys
+text = open(sys.argv[1], errors="replace").read()
+m = re.search(r'HIDIdleTime"\s*=\s*([0-9]+)', text)
+if not m:
+    sys.exit(1)
+print(m.group(1))
+PY
+}
+
+idle_and_off() {
+  capture "$OUT/hid.txt" ioreg -c IOHIDSystem
+  local ns
+  ns="$(hid_ns "$OUT/hid.txt" 2>>"$TRANSCRIPT" || true)"
+  [[ -n "$ns" && "$ns" -ge 5000000000 ]] && display_is off
+}
+
+running_is() {
+  "$BIN" status --json >"$OUT/status.json" 2>>"$TRANSCRIPT" || return 1
+  [[ "$(json_get "$OUT/status.json" running 2>>"$TRANSCRIPT" || true)" == "true" ]]
+}
+
+screen_lock_phrase() {
+  python3 - "$1" <<'PY'
+import re, sys
+text = open(sys.argv[1], errors="replace").read()
+matches = re.findall(r'(?i)screenLock delay is\s+(immediate|off|[0-9]+)', text)
+if not matches:
+    sys.exit(1)
+print(matches[-1].lower())
+PY
+}
+
 state_is_fresh() {
   python3 - "$STATE" "1000" "3" <<'PY'
 import json, sys, time
@@ -218,58 +252,68 @@ capture "$OUT/assertions.txt" pmset -g assertions
 pid="$(json_get "$OUT/status.json" pid 2>>"$TRANSCRIPT" || echo none)"
 child="$(pgrep -P "$pid" -x caffeinate 2>>"$TRANSCRIPT" | head -n 1 || true)"
 if [[ "$power" == "ac" && "$prevented" == "true" && -n "$child" ]] \
-  && grep -Eq '^ *PreventSystemSleep +1$' "$OUT/assertions.txt" \
-  && grep -Eq "pid ${child}\\(caffeinate\\):" "$OUT/assertions.txt"; then
-  mark PASS V1 "PreventSystemSleep 1 lists pid ${child}(caffeinate) while power is ac and sleepPrevented is true"
+  && grep -Eq '^ *PreventSystemSleep +[1-9][0-9]*$' "$OUT/assertions.txt" \
+  && grep -Eq "pid ${child}\\(caffeinate\\):.*PreventSystemSleep" "$OUT/assertions.txt"; then
+  mark PASS V1 "PreventSystemSleep lists pid ${child}(caffeinate) while power is ac and sleepPrevented is true"
 elif [[ "$power" == "battery" ]]; then
   mark FAIL V1 "power is battery; releasing the assertion on battery is a manual gap"
 else
   mark FAIL V1 "power is ${power}, sleepPrevented is ${prevented}, or PreventSystemSleep does not list pid ${child}(caffeinate)"
 fi
 
-capture "$OUT/hid.txt" ioreg -c IOHIDSystem
-if wait_until 8 display_is off; then
-  mark PASS V2 "AppleCLCD2 CurrentPowerState is 0 and status display is off"
+if wait_until 8 idle_and_off; then
+  mark PASS V2 "HIDIdleTime is at least 5s and AppleCLCD2 CurrentPowerState is 0 and status display is off"
 else
-  mark FAIL V2 "display stayed on for 8 seconds at idle threshold 5"
+  mark FAIL V2 "display stayed on for 8 seconds or HIDIdleTime stayed under 5s"
 fi
 
 line "wake coverage: arch-caffeinate wake stands in for mouse or key input"
 wake_input=0
+reoff=0
 if display_is off; then
   "$BIN" wake >>"$TRANSCRIPT" 2>&1 || true
   if wait_until 3 display_is on; then
     wake_input=1
   fi
 fi
+if [[ "$wake_input" -eq 1 ]] && wait_until 8 idle_and_off; then
+  reoff=1
+fi
 
 "$BIN" stop >>"$TRANSCRIPT" 2>&1 || true
 osascript -e 'display notification "verify" with title "arch-caffeinate"' >>"$TRANSCRIPT" 2>&1 || true
 note_while_stopped=0
-if hold_display off 3; then
+if [[ "$reoff" -eq 1 ]] && hold_display off 3; then
   note_while_stopped=1
 fi
 
 "$BIN" start >>"$TRANSCRIPT" 2>&1 || true
-osascript -e 'display notification "verify" with title "arch-caffeinate"' >>"$TRANSCRIPT" 2>&1 || true
 note_while_started=0
-if wait_until 3 display_is on; then
-  note_while_started=1
+if wait_until 8 running_is; then
+  osascript -e 'display notification "verify" with title "arch-caffeinate"' >>"$TRANSCRIPT" 2>&1 || true
+  if wait_until 3 display_is on; then
+    note_while_started=1
+  fi
 fi
 
-if [[ "$wake_input" -eq 1 && "$note_while_stopped" -eq 1 && "$note_while_started" -eq 1 ]]; then
-  mark PASS V3 "wake stands in for mouse or key input; notification leaves CurrentPowerState 0 while stopped and 1 after start"
+if [[ "$wake_input" -eq 1 && "$reoff" -eq 1 && "$note_while_stopped" -eq 1 && "$note_while_started" -eq 1 ]]; then
+  mark PASS V3 "wake stands in for mouse or key input; the display is off again before stop; notification leaves CurrentPowerState 0 while stopped and 1 after start"
 else
-  mark FAIL V3 "wake=${wake_input} notification_while_stopped=${note_while_stopped} notification_after_start=${note_while_started}"
+  mark FAIL V3 "wake=${wake_input} reoff=${reoff} notification_while_stopped=${note_while_stopped} notification_after_start=${note_while_started}"
 fi
 
 capture "$OUT/screenlock.txt" sysadminctl -screenLock status
 "$BIN" status --json >"$OUT/status.json" 2>>"$TRANSCRIPT" || true
 lock="$(json_get "$OUT/status.json" screenLock 2>>"$TRANSCRIPT" || echo missing)"
-if [[ "$lock" == "off" ]] && grep -qi 'off' "$OUT/screenlock.txt"; then
-  mark PASS V4 "sysadminctl stderr and status screenLock are off"
+phrase="$(screen_lock_phrase "$OUT/screenlock.txt" 2>>"$TRANSCRIPT" || true)"
+quoted="$(grep -E -i 'screenLock delay is' "$OUT/screenlock.txt" | tail -n 1 || true)"
+if [[ -z "$quoted" ]]; then
+  quoted="missing"
+fi
+if [[ "$lock" == "off" && "$phrase" == "off" ]] && grep -q 'PASS screenlock: off' <<<"$doctor_out"; then
+  mark PASS V4 "sysadminctl phrase is off, status screenLock is off, and doctor prints PASS screenlock: off"
 else
-  mark FAIL V4 "screenLock is ${lock}"
+  mark FAIL V4 "screenLock is ${lock}; sysadminctl: ${quoted}"
 fi
 
 resolved_version="$(bash -lc 'arch-caffeinate --version' 2>>"$TRANSCRIPT" || true)"
@@ -330,7 +374,7 @@ fi
 v8_out="$OUT/v8.txt"
 if [[ -x "$INSTALL_TEST" ]] && "$INSTALL_TEST" >"$v8_out" 2>&1; then
   cat "$v8_out" >>"$TRANSCRIPT"
-  mark PASS V8 "scripts/test-install-from-clone.sh exited 0"
+  mark PASS V8 "$INSTALL_TEST exited 0"
 else
   cat "$v8_out" >>"$TRANSCRIPT" 2>/dev/null || true
   mark FAIL V8 "scripts/test-install-from-clone.sh failed"

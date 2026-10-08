@@ -4,8 +4,8 @@ After HID idle time reaches the threshold, the display is fully off.
 
 ## Sub-features
 
-- `v2-off` turns the display fully off once the idle threshold is reached.
-- `v2-once` does not repeat the off command while the display stays off.
+- `v2-off` turns the display fully off once idle time reaches the threshold.
+- `v2-once` sends `pmset displaysleepnow` again only after idle time falls below the threshold and then reaches it again.
 
 ## How to get to it (user POV)
 
@@ -28,4 +28,6 @@ Preconditions:
 
 - Do not use the 600 second default for this proof.
 - A dimmed panel still counts as on. Require the full-off power state.
+- `HIDIdleTime` is nanoseconds. Five seconds is `5000000000`. Pass V2 only when that value is at least 5 seconds and the panel is off in the same poll.
 - Touching the keyboard during the wait resets `HIDIdleTime` and invalidates the run.
+- The bash proof does not count `pmset displaysleepnow`. A panel that is already off at low idle time is not V2.

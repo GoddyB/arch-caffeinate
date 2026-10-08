@@ -1,7 +1,5 @@
 # Install from clone
 
-V8. "this should probably be included in your verification skill"
-
 A clean clone builds `arch-caffeinate` and `install` loads it against a stub `launchctl`.
 
 ## Sub-features
@@ -16,7 +14,7 @@ A clean clone builds `arch-caffeinate` and `install` loads it against a stub `la
 
 Preconditions:
 
-- `git` can read `origin` and the current revision.
+- `git` can read `origin`, and the current revision is already on that remote. An unpushed `HEAD` fails.
 - Go can build `./cmd/arch-caffeinate`.
 - The script uses a temporary `HOME`. It does not touch the login user's LaunchAgents.
 

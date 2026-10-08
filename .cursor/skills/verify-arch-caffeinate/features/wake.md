@@ -19,8 +19,9 @@ Preconditions:
 - Doctor has no `FAIL` line.
 
 - **Wake coverage.** The display must already be off. Run `arch-caffeinate wake`. That command stands in for mouse or key input. Within 3 seconds, `ioreg -r -d 1 -c AppleCLCD2` shows `"CurrentPowerState"=1` and `status --json` `display` is `"on"`. The PASS line says `wake` is the stand-in.
+- **Off again.** Leave input alone. Within 8 seconds, `HIDIdleTime` is at least 5 seconds and `CurrentPowerState` is `0` again. `stop` does not turn the panel off.
 - **Notification while stopped.** Run `arch-caffeinate stop`, then `osascript -e 'display notification "verify" with title "arch-caffeinate"'`. For 3 samples, `CurrentPowerState` stays `0`.
-- **Notification after start.** Run `arch-caffeinate start`, post the same notification, and expect `CurrentPowerState` `1`.
+- **Notification after start.** Run `arch-caffeinate start`. Wait until `status --json` reports `"running": true`. Then post the same notification, and expect `CurrentPowerState` `1`.
 - **Proof.** Save the off listing, the wake command, and the following on listing for each sub-feature.
 
 ## Gotchas

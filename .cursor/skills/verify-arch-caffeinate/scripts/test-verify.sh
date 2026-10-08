@@ -30,7 +30,17 @@ case "$*" in
     printf '"CurrentPowerState"=%s\n' "$(cat "$VERIFY_FIXTURE/display")"
     ;;
   *IOHIDSystem*)
-    printf '%s\n' 'HIDIdleTime = 6000000000'
+    if [ "$VERIFY_MODE" = "broken" ]; then
+      printf '%s\n' '"HIDIdleTime" = 0'
+      exit 0
+    fi
+    ns=$(cat "$VERIFY_FIXTURE/idle_ns")
+    ns=$((ns + 1000000000))
+    printf '%s\n' "$ns" >"$VERIFY_FIXTURE/idle_ns"
+    if [ "$ns" -ge 5000000000 ]; then
+      printf '%s\n' 0 >"$VERIFY_FIXTURE/display"
+    fi
+    printf '"HIDIdleTime" = %s\n' "$ns"
     ;;
 esac
 EOF
@@ -81,10 +91,13 @@ import json, os, sys, time
 fix, dest, mode = sys.argv[1:]
 display = open(os.path.join(fix, "display")).read().strip()
 cleanup = os.path.exists(os.path.join(fix, "cleanup"))
+agent_path = os.path.join(fix, "agent_mode")
+agent = open(agent_path).read().strip() if os.path.exists(agent_path) else ""
 if mode == "healthy":
+    running = agent == "started"
     payload = {
-        "running": True,
-        "pid": int(open(os.path.join(fix, "parent_pid")).read()),
+        "running": running,
+        "pid": int(open(os.path.join(fix, "parent_pid")).read()) if running else None,
         "power": "ac",
         "sleepPrevented": True,
         "display": "on" if display == "1" else "off",
@@ -137,6 +150,9 @@ case "$cmd" in
       printf '%s\n' drift >>"$plist"
     fi
     cp "$0" "${HOME}/.local/bin/arch-caffeinate"
+    if [[ "$VERIFY_MODE" == "healthy" ]]; then
+      printf '%s\n' started >"$fix/agent_mode"
+    fi
     write_state
     ;;
   doctor)
@@ -144,9 +160,12 @@ case "$cmd" in
       printf '%s\n' 'FAIL macOS: stub'
       exit 1
     fi
-    printf '%s\n' 'PASS macOS' 'PASS heartbeat' 'WARN screen lock readable'
+    printf '%s\n' 'PASS macOS' 'PASS heartbeat: fresh' 'PASS screenlock: off'
     ;;
   status)
+    if [[ "$VERIFY_MODE" == "healthy" && -f "$fix/agent_mode" && "$(cat "$fix/agent_mode")" == "booting" ]]; then
+      printf '%s\n' started >"$fix/agent_mode"
+    fi
     write_state
     cat "$state_dir/state.json"
     printf '\n'
@@ -154,17 +173,17 @@ case "$cmd" in
   wake)
     if [[ "$VERIFY_MODE" == "healthy" ]]; then
       printf '%s\n' 1 >"$fix/display"
+      printf '%s\n' 0 >"$fix/idle_ns"
     fi
     ;;
   stop)
     if [[ "$VERIFY_MODE" == "healthy" ]]; then
-      printf '%s\n' 0 >"$fix/display"
       printf '%s\n' stopped >"$fix/agent_mode"
     fi
     ;;
   start)
     if [[ "$VERIFY_MODE" == "healthy" ]]; then
-      printf '%s\n' started >"$fix/agent_mode"
+      printf '%s\n' booting >"$fix/agent_mode"
     fi
     ;;
   --version)
@@ -192,7 +211,8 @@ prepare() {
   cp "$bin/arch-caffeinate" "$home/.local/bin/arch-caffeinate"
   if [[ "$mode" == "healthy" ]]; then
     printf '%s\n' "export PATH=\"\$HOME/.local/bin:\$PATH\"" >"$home/.bash_profile"
-    printf '%s\n' 0 >"$fix/display"
+    printf '%s\n' 1 >"$fix/display"
+    printf '%s\n' 0 >"$fix/idle_ns"
     printf '%s\n' stopped >"$fix/agent_mode"
     printf '%s\n' 'screenLock delay is off' >"$fix/screenlock.txt"
     printf '%s\n' 'command = /bin/bash' >"$home/.config/ghostty/config"
@@ -215,12 +235,13 @@ EOF
       i=$((i + 1))
     done
     [[ -n "$child" ]] || fail "caffeinate child did not start"
-    printf '   PreventSystemSleep  1\n   pid %s(caffeinate): PreventSystemSleep named: "arch-caffeinate"\n' "$child" >"$fix/assertions.txt"
+    printf '   PreventSystemSleep  2\n   pid %s(caffeinate): PreventSystemSleep named: "arch-caffeinate"\n' "$child" >"$fix/assertions.txt"
   else
     mkdir -p "$home/other/bin"
     cp "$bin/arch-caffeinate" "$home/other/bin/arch-caffeinate"
     printf '%s\n' "export PATH=\"\$HOME/other/bin:\$PATH\"" >"$home/.bash_profile"
     printf '%s\n' 1 >"$fix/display"
+    printf '%s\n' 0 >"$fix/idle_ns"
     printf '%s\n' stopped >"$fix/agent_mode"
     printf '%s\n' 'screenLock delay is immediate' >"$fix/screenlock.txt"
     printf '%s\n' 'command = /bin/zsh' 'initial-command = bash' >"$home/.config/ghostty/config"

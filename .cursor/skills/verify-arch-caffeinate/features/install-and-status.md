@@ -29,5 +29,5 @@ Preconditions:
 ## Gotchas
 
 - `install` does not build. A missing binary is `FAIL`, not a cue to compile inside the proof.
-- Cleanup runs `arch-caffeinate install` without `--idle-seconds`, waits until `idleThresholdSeconds` is `600`, and checks that the plist has no `--idle-seconds` argument. `status` can still show the previous threshold until the new daemon writes `state.json`.
+- Cleanup runs `arch-caffeinate install` without `--idle-seconds`, waits until `idleThresholdSeconds` is `600`, and checks that the plist has no `--idle-seconds` argument. Once the previous heartbeat is dead, `status` reports the threshold from the plist. A heartbeat that is still live can still report the previous threshold.
 - Leave the evidence directory in place after cleanup.
