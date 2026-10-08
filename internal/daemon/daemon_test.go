@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"regexp"
@@ -291,6 +292,37 @@ func TestTickPowerErrorReleases(t *testing.T) {
 	}
 	if len(host.actions) != 1 || host.actions[0] != core.ReleaseSleepAssertion {
 		t.Fatalf("actions %v", host.actions)
+	}
+}
+
+func TestReportLogsAFaultOnce(t *testing.T) {
+	var lines []string
+	cfg := Config{
+		IdleThreshold: time.Second,
+		Poll:          time.Second,
+		Now:           func() time.Time { return time.UnixMilli(1) },
+		Logf: func(format string, args ...any) {
+			lines = append(lines, fmt.Sprintf(format, args...))
+		},
+		seen: map[string]string{},
+	}
+	host := &fake{powerErr: errors.New("boom"), idle: time.Second, display: core.DisplayOn, lock: core.ScreenLockOff}
+	home := t.TempDir()
+	if _, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 || lines[0] != "power: boom" {
+		t.Fatalf("lines %v", lines)
+	}
+	host.powerErr = nil
+	if _, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 2 || lines[1] != "power: cleared" {
+		t.Fatalf("lines %v", lines)
 	}
 }
 

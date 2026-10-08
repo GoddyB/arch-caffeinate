@@ -62,6 +62,7 @@ type Config struct {
 	Poll          time.Duration
 	Now           func() time.Time
 	Logf          func(string, ...any)
+	seen          map[string]string
 }
 
 func (c Config) now() time.Time {
@@ -75,6 +76,28 @@ func (c Config) logf(format string, args ...any) {
 	if c.Logf != nil {
 		c.Logf(format, args...)
 	}
+}
+
+func (c Config) report(name string, err error) {
+	if c.seen == nil {
+		if err != nil {
+			c.logf("%s: %v", name, err)
+		}
+		return
+	}
+	if err == nil {
+		if _, ok := c.seen[name]; ok {
+			delete(c.seen, name)
+			c.logf("%s: cleared", name)
+		}
+		return
+	}
+	msg := err.Error()
+	if c.seen[name] == msg {
+		return
+	}
+	c.seen[name] = msg
+	c.logf("%s: %v", name, err)
 }
 
 type Reader interface {
@@ -163,18 +186,10 @@ func alive(pid int) bool {
 func tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.State) (core.State, error) {
 	note := host.TakeNotification()
 	reading := Snapshot(ctx, host)
-	if reading.PowerErr != nil {
-		cfg.logf("power: %v", reading.PowerErr)
-	}
-	if reading.IdleErr != nil {
-		cfg.logf("idle: %v", reading.IdleErr)
-	}
-	if reading.DisplayErr != nil {
-		cfg.logf("display: %v", reading.DisplayErr)
-	}
-	if reading.LockErr != nil {
-		cfg.logf("screenlock: %v", reading.LockErr)
-	}
+	cfg.report("power", reading.PowerErr)
+	cfg.report("idle", reading.IdleErr)
+	cfg.report("display", reading.DisplayErr)
+	cfg.report("screenlock", reading.LockErr)
 	obs := core.Observation{
 		Power:                 reading.Power,
 		HIDIdle:               reading.Idle,
@@ -184,9 +199,7 @@ func tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.St
 	}
 	next := core.Advance(core.Config{IdleThreshold: cfg.IdleThreshold}, state, obs, func(action core.Action) error {
 		err := apply(ctx, host, action)
-		if err != nil {
-			cfg.logf("%s: %v", action, err)
-		}
+		cfg.report(action.String(), err)
 		return err
 	})
 	pid := os.Getpid()
@@ -286,6 +299,7 @@ func Run(ctx context.Context, host Host, paths Paths, cfg Config) error {
 			AppendLog(paths, fmt.Sprintf(format, args...))
 		}
 	}
+	cfg.seen = map[string]string{}
 	notes, err := host.StartNotifications(ctx, cfg.logf)
 	if err != nil {
 		return err
