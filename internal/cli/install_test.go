@@ -47,9 +47,8 @@ func TestInstallPlistAndLaunch(t *testing.T) {
 	plistPath := filepath.Join(home, "Library", "LaunchAgents", "io.github.goddyb.arch-caffeinate.plist")
 	binPath := filepath.Join(home, ".local", "bin", "arch-caffeinate")
 	first := mustRead(t, plistPath)
-	want := plistLiteral(binPath, true)
-	if first != want {
-		t.Fatalf("plist\n%s\nwant\n%s", first, want)
+	if got := mustArgs(t, first); !slices.Equal(got, []string{binPath, "run", "--idle-seconds", "5"}) {
+		t.Fatalf("args %v", got)
 	}
 	if mustRead(t, binPath) != "payload" {
 		t.Fatal("binary")
@@ -65,8 +64,8 @@ func TestInstallPlistAndLaunch(t *testing.T) {
 		t.Fatal(err)
 	}
 	dropped := mustRead(t, plistPath)
-	if dropped != plistLiteral(binPath, false) {
-		t.Fatalf("plist\n%s", dropped)
+	if got := mustArgs(t, dropped); !slices.Equal(got, []string{binPath, "run"}) {
+		t.Fatalf("args %v", got)
 	}
 	if err := Run(context.Background(), []string{"uninstall"}, opts); err != nil {
 		t.Fatal(err)
@@ -135,16 +134,13 @@ func joinArgs(args []string) string {
 	return strings.Join(args, " ")
 }
 
-func plistLiteral(bin string, idle bool) string {
-	args := "<string>" + bin + "</string>\n<string>run</string>\n"
-	if idle {
-		args += "<string>--idle-seconds</string>\n<string>5</string>\n"
+func mustArgs(t *testing.T, body string) []string {
+	t.Helper()
+	args, err := programArguments([]byte(body))
+	if err != nil {
+		t.Fatal(err)
 	}
-	return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-		"<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n" +
-		"<plist version=\"1.0\"><dict><key>Label</key><string>io.github.goddyb.arch-caffeinate</string><key>ProgramArguments</key><array>\n" +
-		args +
-		"</array><key>RunAtLoad</key><true></true><key>KeepAlive</key><true></true></dict></plist>\n"
+	return args
 }
 
 func mustRead(t *testing.T, path string) string {

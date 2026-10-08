@@ -38,7 +38,22 @@ HOME="$HOME_DIR" ARCH_CAFFEINATE_LAUNCHCTL="$STUB" "$WORKDIR/arch-caffeinate" in
 cmp "$PLIST" "$WORKDIR/plist.1"
 cmp "$WORKDIR/arch-caffeinate" "$HOME_DIR/.local/bin/arch-caffeinate"
 grep -qx "bootstrap gui/$(id -u) $PLIST" "$LOG"
-grep -q '<string>--idle-seconds</string>' "$PLIST"
-grep -q '<key>KeepAlive</key><true></true>' "$PLIST"
+python3 - "$PLIST" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+kids = list(root.find("dict"))
+vals = {}
+i = 0
+while i < len(kids) - 1:
+    if kids[i].tag == "key":
+        vals[kids[i].text] = kids[i + 1]
+        i += 2
+    else:
+        i += 1
+args = [node.text for node in list(vals["ProgramArguments"])]
+if "--idle-seconds" not in args or vals["KeepAlive"].tag != "true" or vals["RunAtLoad"].tag != "true":
+    raise SystemExit("plist missing idle flag or keepalive: " + repr(args))
+PY
 
 echo "install-from-clone ok"

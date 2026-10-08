@@ -32,14 +32,11 @@ func install(ctx context.Context, opts Options, paths daemon.Paths, idle int, se
 	if err := copyFile(exe, paths.Bin()); err != nil {
 		return err
 	}
-	args := []string{paths.Bin(), "run"}
+	var idleArg *int
 	if set {
-		args = append(args, "--idle-seconds", strconv.Itoa(idle))
+		idleArg = &idle
 	}
-	body, err := encodePlist(args)
-	if err != nil {
-		return err
-	}
+	body := encodePlist(agentArgs(paths.Bin(), idleArg))
 	if err := daemon.WriteFileAtomic(paths.Plist(), body, 0o644); err != nil {
 		return err
 	}
@@ -99,102 +96,45 @@ func copyFile(src, dst string) error {
 	return daemon.WriteFileAtomic(dst, b, 0o755)
 }
 
-func encodePlist(args []string) ([]byte, error) {
+func agentArgs(bin string, idle *int) []string {
+	args := []string{bin, "run"}
+	if idle != nil {
+		args = append(args, "--idle-seconds", strconv.Itoa(*idle))
+	}
+	return args
+}
+
+func encodePlist(args []string) []byte {
 	var buf bytes.Buffer
 	buf.WriteString(xml.Header)
 	buf.WriteString(`<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">` + "\n")
-	enc := xml.NewEncoder(&buf)
-	if err := enc.EncodeToken(xml.StartElement{Name: xml.Name{Local: "plist"}, Attr: []xml.Attr{{Name: xml.Name{Local: "version"}, Value: "1.0"}}}); err != nil {
-		return nil, err
-	}
-	if err := enc.EncodeToken(xml.StartElement{Name: xml.Name{Local: "dict"}}); err != nil {
-		return nil, err
-	}
-	if err := writeKV(enc, "Label", daemon.Label); err != nil {
-		return nil, err
-	}
-	if err := enc.EncodeToken(xml.StartElement{Name: xml.Name{Local: "key"}}); err != nil {
-		return nil, err
-	}
-	if err := enc.EncodeToken(xml.CharData("ProgramArguments")); err != nil {
-		return nil, err
-	}
-	if err := enc.EncodeToken(xml.EndElement{Name: xml.Name{Local: "key"}}); err != nil {
-		return nil, err
-	}
-	if err := enc.EncodeToken(xml.StartElement{Name: xml.Name{Local: "array"}}); err != nil {
-		return nil, err
-	}
-	if err := enc.EncodeToken(xml.CharData("\n")); err != nil {
-		return nil, err
-	}
+	buf.WriteString(`<plist version="1.0"><dict>` + "\n")
+	writeKey(&buf, "Label")
+	writeString(&buf, daemon.Label)
+	writeKey(&buf, "ProgramArguments")
+	buf.WriteString("<array>\n")
 	for _, arg := range args {
-		if err := writeString(enc, arg); err != nil {
-			return nil, err
-		}
-		if err := enc.EncodeToken(xml.CharData("\n")); err != nil {
-			return nil, err
-		}
+		writeString(&buf, arg)
 	}
-	if err := enc.EncodeToken(xml.EndElement{Name: xml.Name{Local: "array"}}); err != nil {
-		return nil, err
-	}
-	if err := writeBool(enc, "RunAtLoad"); err != nil {
-		return nil, err
-	}
-	if err := writeBool(enc, "KeepAlive"); err != nil {
-		return nil, err
-	}
-	if err := enc.EncodeToken(xml.EndElement{Name: xml.Name{Local: "dict"}}); err != nil {
-		return nil, err
-	}
-	if err := enc.EncodeToken(xml.EndElement{Name: xml.Name{Local: "plist"}}); err != nil {
-		return nil, err
-	}
-	if err := enc.Flush(); err != nil {
-		return nil, err
-	}
-	buf.WriteByte('\n')
-	return buf.Bytes(), nil
+	buf.WriteString("</array>\n")
+	writeKey(&buf, "RunAtLoad")
+	buf.WriteString("<true/>\n")
+	writeKey(&buf, "KeepAlive")
+	buf.WriteString("<true/>\n")
+	buf.WriteString("</dict></plist>\n")
+	return buf.Bytes()
 }
 
-func writeKV(enc *xml.Encoder, key, value string) error {
-	if err := enc.EncodeToken(xml.StartElement{Name: xml.Name{Local: "key"}}); err != nil {
-		return err
-	}
-	if err := enc.EncodeToken(xml.CharData(key)); err != nil {
-		return err
-	}
-	if err := enc.EncodeToken(xml.EndElement{Name: xml.Name{Local: "key"}}); err != nil {
-		return err
-	}
-	return writeString(enc, value)
+func writeKey(buf *bytes.Buffer, key string) {
+	buf.WriteString("<key>")
+	_ = xml.EscapeText(buf, []byte(key))
+	buf.WriteString("</key>")
 }
 
-func writeString(enc *xml.Encoder, value string) error {
-	if err := enc.EncodeToken(xml.StartElement{Name: xml.Name{Local: "string"}}); err != nil {
-		return err
-	}
-	if err := enc.EncodeToken(xml.CharData(value)); err != nil {
-		return err
-	}
-	return enc.EncodeToken(xml.EndElement{Name: xml.Name{Local: "string"}})
-}
-
-func writeBool(enc *xml.Encoder, key string) error {
-	if err := enc.EncodeToken(xml.StartElement{Name: xml.Name{Local: "key"}}); err != nil {
-		return err
-	}
-	if err := enc.EncodeToken(xml.CharData(key)); err != nil {
-		return err
-	}
-	if err := enc.EncodeToken(xml.EndElement{Name: xml.Name{Local: "key"}}); err != nil {
-		return err
-	}
-	if err := enc.EncodeToken(xml.StartElement{Name: xml.Name{Local: "true"}}); err != nil {
-		return err
-	}
-	return enc.EncodeToken(xml.EndElement{Name: xml.Name{Local: "true"}})
+func writeString(buf *bytes.Buffer, value string) {
+	buf.WriteString("<string>")
+	_ = xml.EscapeText(buf, []byte(value))
+	buf.WriteString("</string>\n")
 }
 
 func programArguments(data []byte) ([]string, error) {
@@ -216,7 +156,7 @@ func installedIdle(paths daemon.Paths) int {
 		return idle
 	}
 	args, err := programArguments(b)
-	if err != nil || len(args) < 2 {
+	if err != nil || len(args) < 2 || args[1] != "run" {
 		return idle
 	}
 	parsed, _, err := parseRunArgs(args[2:])
