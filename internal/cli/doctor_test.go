@@ -53,7 +53,7 @@ func TestDoctorNotMacOS(t *testing.T) {
 		"PASS heartbeat: fresh\n" +
 		"PASS power: readable\n" +
 		"PASS idle: readable\n" +
-		"PASS screenlock: immediate\n"
+		"WARN screenlock: immediate\n"
 	if buf.String() != want {
 		t.Fatalf("output\n%s", buf.String())
 	}
@@ -105,7 +105,7 @@ func TestDoctorHeartbeatBoundary(t *testing.T) {
 		"FAIL heartbeat: stale or missing\n" +
 		"PASS power: readable\n" +
 		"PASS idle: readable\n" +
-		"PASS screenlock: immediate\n"
+		"WARN screenlock: immediate\n"
 	if buf.String() != want {
 		t.Fatalf("output\n%s", buf.String())
 	}

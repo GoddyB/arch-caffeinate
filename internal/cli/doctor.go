@@ -53,10 +53,10 @@ func doctor(ctx context.Context, opts Options, paths daemon.Paths) error {
 	switch {
 	case reading.LockErr != nil:
 		line("FAIL", "screenlock: not readable")
-	case reading.Lock == core.ScreenLockUnknown:
-		line("WARN", "screenlock: unknown")
+	case reading.Lock == core.ScreenLockOff:
+		line("PASS", "screenlock: off")
 	default:
-		line("PASS", "screenlock: "+string(reading.Lock))
+		line("WARN", "screenlock: "+string(reading.Lock))
 	}
 	if fail > 0 {
 		return errDoctor
