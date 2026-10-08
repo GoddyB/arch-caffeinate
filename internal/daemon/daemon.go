@@ -143,11 +143,9 @@ func Snapshot(ctx context.Context, host Reader) Reading {
 	return r
 }
 
-func Tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.State, pending bool) (core.State, Status, bool, error) {
+func Tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.State) (core.State, error) {
 	cfg = normalize(cfg)
-	if host.TakeNotification() {
-		pending = true
-	}
+	note := host.TakeNotification()
 	reading := Snapshot(ctx, host)
 	if reading.PowerErr != nil {
 		cfg.logf("power: %v", reading.PowerErr)
@@ -165,17 +163,13 @@ func Tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.St
 		Power:                 reading.Power,
 		HIDIdle:               reading.Idle,
 		IdleKnown:             reading.IdleErr == nil,
-		SleepHeld:             reading.SleepHeld,
-		NotificationDelivered: pending,
+		SleepHeld:             host.SleepHeld(),
+		NotificationDelivered: note,
 	}
-	failedDeclare := false
 	next := core.Advance(core.Config{IdleThreshold: cfg.IdleThreshold}, state, obs, func(action core.Action) error {
 		err := apply(ctx, host, action)
 		if err != nil {
 			cfg.logf("%s: %v", action, err)
-			if action == core.DeclareActivity {
-				failedDeclare = true
-			}
 		}
 		return err
 	})
@@ -196,7 +190,7 @@ func Tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.St
 		Running:              true,
 		PID:                  &pid,
 		Power:                reading.Power.String(),
-		SleepPrevented:       next.SleepHeld,
+		SleepPrevented:       host.SleepHeld(),
 		Display:              display,
 		IdleSeconds:          idleSeconds,
 		IdleThresholdSeconds: int(cfg.IdleThreshold / time.Second),
@@ -209,9 +203,9 @@ func Tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.St
 		PollMs:    int(cfg.Poll / time.Millisecond),
 	}
 	if err := writeState(paths, rec); err != nil {
-		return next, st, failedDeclare, err
+		return next, err
 	}
-	return next, st, failedDeclare, nil
+	return next, nil
 }
 
 func apply(ctx context.Context, host Host, action core.Action) error {
@@ -299,11 +293,9 @@ func Run(ctx context.Context, host Host, paths Paths, cfg Config) error {
 		cfg.logf("notifications: %v", err)
 	}
 	var state core.State
-	var pending bool
 	tick := func() {
-		next, _, still, err := Tick(ctx, host, paths, cfg, state, pending)
+		next, err := Tick(ctx, host, paths, cfg, state)
 		state = next
-		pending = still
 		if err != nil {
 			cfg.logf("%s", err.Error())
 		}

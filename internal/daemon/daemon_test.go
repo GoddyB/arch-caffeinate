@@ -102,14 +102,12 @@ func TestTickWritesLiteralStatus(t *testing.T) {
 		Poll:          250 * time.Millisecond,
 		Now:           func() time.Time { return now },
 	}
-	state, st, pending, err := Tick(context.Background(), host, paths, cfg, core.State{SleepHeld: true, Display: core.DisplayOff}, false)
+	state, err := Tick(context.Background(), host, paths, cfg, core.State{Display: core.DisplayOff})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pending {
-		t.Fatal("pending")
-	}
-	if state.SleepHeld || state.Display != core.DisplayOn {
+	st := mustStatus(t, paths)
+	if state.WakeOwed || state.Display != core.DisplayOn {
 		t.Fatalf("state %#v", state)
 	}
 	if st.Power != "battery" || st.SleepPrevented || st.Display != "off" || st.ScreenLock != "delay:300" || st.IdleThresholdSeconds != 5 {
@@ -155,20 +153,21 @@ func TestTickDisplayFollowsLiveReading(t *testing.T) {
 		sleep:   true,
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: func() time.Time { return time.UnixMilli(1) }}
-	_, st, _, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{SleepHeld: true, Display: core.DisplayOff}, false)
+	_, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Display != "off" {
+	if st := mustStatus(t, Paths{Home: home}); st.Display != "off" {
 		t.Fatalf("display %s", st.Display)
 	}
 	host.displayErr = errors.New("no panel")
 	host.idleErr = errors.New("no idle")
-	_, st, _, err = Tick(context.Background(), host, Paths{Home: t.TempDir()}, cfg, core.State{SleepHeld: true, Display: core.DisplayOff}, false)
+	home2 := t.TempDir()
+	_, err = Tick(context.Background(), host, Paths{Home: home2}, cfg, core.State{Display: core.DisplayOff})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Display != "on" {
+	if st := mustStatus(t, Paths{Home: home2}); st.Display != "on" {
 		t.Fatalf("unknown display %s", st.Display)
 	}
 }
@@ -184,14 +183,14 @@ func TestTickRetriesFailedDisplayOff(t *testing.T) {
 		fail:    map[core.Action]int{core.TurnDisplayOff: 1},
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: time.Now}
-	state, _, _, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{SleepHeld: true, Display: core.DisplayOn}, false)
+	state, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOn})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if state.Display != core.DisplayOn {
 		t.Fatalf("display %s", state.Display)
 	}
-	state, _, _, err = Tick(context.Background(), host, Paths{Home: home}, cfg, state, false)
+	state, err = Tick(context.Background(), host, Paths{Home: home}, cfg, state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,30 +215,30 @@ func TestTickRetriesFailedDeclare(t *testing.T) {
 		fail:    map[core.Action]int{core.DeclareActivity: 1},
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: time.Now}
-	state, _, pending, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{SleepHeld: true, Display: core.DisplayOff}, false)
+	state, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pending || state.Display != core.DisplayOff {
-		t.Fatalf("pending %v state %#v", pending, state)
+	if !state.WakeOwed || state.Display != core.DisplayOff {
+		t.Fatalf("state %#v", state)
 	}
-	state, _, pending, err = Tick(context.Background(), host, Paths{Home: home}, cfg, state, pending)
+	state, err = Tick(context.Background(), host, Paths{Home: home}, cfg, state)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pending || state.Display != core.DisplayOn {
-		t.Fatalf("pending %v state %#v", pending, state)
+	if state.WakeOwed || state.Display != core.DisplayOn {
+		t.Fatalf("state %#v", state)
 	}
 	if len(host.actions) != 2 || host.actions[0] != core.DeclareActivity || host.actions[1] != core.DeclareActivity {
 		t.Fatalf("actions %v", host.actions)
 	}
 	host.idle = time.Second
-	state, _, pending, err = Tick(context.Background(), host, Paths{Home: home}, cfg, state, pending)
+	state, err = Tick(context.Background(), host, Paths{Home: home}, cfg, state)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pending || state.Display != core.DisplayOn || len(host.actions) != 2 {
-		t.Fatalf("actions %v pending %v state %#v", host.actions, pending, state)
+	if state.WakeOwed || state.Display != core.DisplayOn || len(host.actions) != 2 {
+		t.Fatalf("actions %v state %#v", host.actions, state)
 	}
 }
 
@@ -253,10 +252,11 @@ func TestTickIdleErrorLeavesDisplay(t *testing.T) {
 		sleep:   true,
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: func() time.Time { return time.UnixMilli(1) }}
-	state, st, _, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{SleepHeld: true, Display: core.DisplayOff}, false)
+	state, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff})
 	if err != nil {
 		t.Fatal(err)
 	}
+	st := mustStatus(t, Paths{Home: home})
 	if state.Display != core.DisplayOff || st.IdleSeconds != 0 || len(host.actions) != 0 {
 		t.Fatalf("state %#v idle %v actions %v", state, st.IdleSeconds, host.actions)
 	}
@@ -272,16 +272,26 @@ func TestTickPowerErrorReleases(t *testing.T) {
 		sleep:    true,
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: time.Now}
-	state, st, _, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{SleepHeld: true, Display: core.DisplayOn}, false)
+	state, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOn})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.SleepHeld || st.Power != "unknown" || st.SleepPrevented {
+	st := mustStatus(t, Paths{Home: home})
+	if state.Display != core.DisplayOn || st.Power != "unknown" || st.SleepPrevented {
 		t.Fatalf("state %#v status %+v", state, st)
 	}
 	if len(host.actions) != 1 || host.actions[0] != core.ReleaseSleepAssertion {
 		t.Fatalf("actions %v", host.actions)
 	}
+}
+
+func mustStatus(t *testing.T, paths Paths) Status {
+	t.Helper()
+	rec, err := ReadState(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rec.Status
 }
 
 func TestRunReleasesOnExit(t *testing.T) {

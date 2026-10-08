@@ -9,9 +9,9 @@ import (
 
 func TestAdvance(t *testing.T) {
 	cfg := Config{IdleThreshold: 600 * time.Second}
-	onAC := State{SleepHeld: true, Display: DisplayOn}
-	offAC := State{SleepHeld: false, Display: DisplayOn}
-	asleep := State{SleepHeld: true, Display: DisplayOff}
+	onAC := State{Display: DisplayOn}
+	offAC := State{Display: DisplayOn}
+	asleep := State{Display: DisplayOff}
 	open := Observation{IdleKnown: true, SleepHeld: false, Power: PowerAC}
 
 	cases := []struct {
@@ -39,7 +39,7 @@ func TestAdvance(t *testing.T) {
 			name: "idle crossing the threshold turns the display off once",
 			s:    onAC,
 			o:    Observation{IdleKnown: true, SleepHeld: true, Power: PowerAC, HIDIdle: 600 * time.Second},
-			want: State{SleepHeld: true, Display: DisplayOff},
+			want: State{Display: DisplayOff},
 			acts: []Action{TurnDisplayOff},
 		},
 		{
@@ -72,7 +72,7 @@ func TestAdvance(t *testing.T) {
 			name: "battery to ac and idle crossing emit acquire then display off",
 			s:    State{Display: DisplayOn},
 			o:    Observation{IdleKnown: true, Power: PowerAC, HIDIdle: 600 * time.Second},
-			want: State{SleepHeld: true, Display: DisplayOff},
+			want: State{Display: DisplayOff},
 			acts: []Action{AcquireSleepAssertion, TurnDisplayOff},
 		},
 		{
@@ -93,6 +93,20 @@ func TestAdvance(t *testing.T) {
 			s:    asleep,
 			o:    Observation{SleepHeld: true, Power: PowerAC},
 			want: asleep,
+		},
+		{
+			name: "notification with unknown idle is declared",
+			s:    asleep,
+			o:    Observation{SleepHeld: true, Power: PowerAC, NotificationDelivered: true},
+			want: onAC,
+			acts: []Action{DeclareActivity},
+		},
+		{
+			name: "a failed declare stays owed until it succeeds",
+			s:    State{Display: DisplayOff, WakeOwed: true},
+			o:    Observation{IdleKnown: true, SleepHeld: true, Power: PowerAC, HIDIdle: 900 * time.Second},
+			want: onAC,
+			acts: []Action{DeclareActivity},
 		},
 		{
 			name: "display turns off on battery",
@@ -122,7 +136,7 @@ func TestAdvance(t *testing.T) {
 
 func TestAdvanceKeepsStateWhenActionFails(t *testing.T) {
 	cfg := Config{IdleThreshold: 5 * time.Second}
-	start := State{SleepHeld: true, Display: DisplayOn}
+	start := State{Display: DisplayOn}
 	obs := Observation{IdleKnown: true, SleepHeld: true, Power: PowerAC, HIDIdle: 5 * time.Second}
 	boom := errors.New("display off failed")
 	var calls []Action
@@ -140,16 +154,10 @@ func TestAdvanceKeepsStateWhenActionFails(t *testing.T) {
 		calls = append(calls, a)
 		return nil
 	})
-	if state != (State{SleepHeld: true, Display: DisplayOff}) {
+	if state != (State{Display: DisplayOff}) {
 		t.Fatalf("state %#v", state)
 	}
 	if !slices.Equal(calls, []Action{TurnDisplayOff, TurnDisplayOff}) {
 		t.Fatalf("actions %v", calls)
-	}
-}
-
-func TestTurnDisplayOffName(t *testing.T) {
-	if TurnDisplayOff.String() != "TurnDisplayOff" {
-		t.Fatalf("name %s", TurnDisplayOff)
 	}
 }

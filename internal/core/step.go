@@ -63,8 +63,8 @@ type Observation struct {
 }
 
 type State struct {
-	SleepHeld bool
-	Display   Display
+	Display  Display
+	WakeOwed bool
 }
 
 type Action int
@@ -93,42 +93,35 @@ func (a Action) String() string {
 
 func (s State) After(a Action) State {
 	switch a {
-	case AcquireSleepAssertion:
-		s.SleepHeld = true
-	case ReleaseSleepAssertion:
-		s.SleepHeld = false
 	case TurnDisplayOff:
 		s.Display = DisplayOff
 	case DeclareActivity:
 		s.Display = DisplayOn
+		s.WakeOwed = false
 	}
 	return s
 }
 
 func Step(cfg Config, s State, o Observation) (State, []Action) {
 	next := s
-	next.SleepHeld = o.SleepHeld
 	var actions []Action
-	if (o.Power == PowerAC) != o.SleepHeld {
-		if o.Power == PowerAC {
-			actions = append(actions, AcquireSleepAssertion)
-		} else {
-			actions = append(actions, ReleaseSleepAssertion)
-		}
-	}
-	if !o.IdleKnown {
-		return next, actions
-	}
 	switch {
-	case o.NotificationDelivered:
+	case o.Power == PowerAC && !o.SleepHeld:
+		actions = append(actions, AcquireSleepAssertion)
+	case o.Power != PowerAC && o.SleepHeld:
+		actions = append(actions, ReleaseSleepAssertion)
+	}
+	next.WakeOwed = s.WakeOwed || o.NotificationDelivered
+	if next.WakeOwed {
 		actions = append(actions, DeclareActivity)
-		if o.HIDIdle < cfg.IdleThreshold {
+	}
+	if o.IdleKnown {
+		switch {
+		case o.HIDIdle < cfg.IdleThreshold:
 			next.Display = DisplayOn
+		case s.Display == DisplayOn && !next.WakeOwed:
+			actions = append(actions, TurnDisplayOff)
 		}
-	case o.HIDIdle < cfg.IdleThreshold:
-		next.Display = DisplayOn
-	case s.Display == DisplayOn:
-		actions = append(actions, TurnDisplayOff)
 	}
 	return next, actions
 }
