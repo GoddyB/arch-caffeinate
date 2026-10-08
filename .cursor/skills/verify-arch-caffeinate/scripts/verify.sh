@@ -209,6 +209,7 @@ PY
 
 install_ok=0
 if "$BIN" install --idle-seconds 5 >>"$TRANSCRIPT" 2>&1; then
+  trap '"$BIN" install >/dev/null 2>&1' EXIT
   cp "$PLIST" "$OUT/plist.1"
   if "$BIN" install --idle-seconds 5 >>"$TRANSCRIPT" 2>&1; then
     if cmp -s "$PLIST" "$OUT/plist.1"; then
