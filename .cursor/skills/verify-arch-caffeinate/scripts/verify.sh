@@ -188,17 +188,20 @@ PY
 }
 
 state_is_fresh() {
-  python3 - "$STATE" "1000" "3" <<'PY'
+  python3 - "$STATE" <<'PY'
 import json, sys, time
-path, poll_ms, polls = sys.argv[1], float(sys.argv[2]), float(sys.argv[3])
+path = sys.argv[1]
 try:
     data = json.load(open(path))
 except (OSError, json.JSONDecodeError):
     sys.exit(1)
 written = data.get("writtenAt")
+poll_ms = data.get("pollMs")
 if not isinstance(written, (int, float)) or isinstance(written, bool):
     sys.exit(1)
-if abs(time.time() * 1000 - float(written)) <= poll_ms * polls:
+if not isinstance(poll_ms, (int, float)) or isinstance(poll_ms, bool) or poll_ms <= 0:
+    sys.exit(1)
+if abs(time.time() * 1000 - float(written)) <= float(poll_ms) * 3:
     sys.exit(0)
 sys.exit(1)
 PY

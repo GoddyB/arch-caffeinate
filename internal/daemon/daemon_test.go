@@ -287,6 +287,18 @@ func TestTickPowerErrorReleases(t *testing.T) {
 	}
 }
 
+func TestLiveRejectsNonPositivePoll(t *testing.T) {
+	pid := os.Getpid()
+	rec := StateFile{
+		Status:    Status{PID: &pid},
+		WrittenAt: time.Now().UnixMilli(),
+		PollMs:    0,
+	}
+	if rec.Live(time.Now()) {
+		t.Fatal("live with poll 0")
+	}
+}
+
 func mustStatus(t *testing.T, paths Paths) Status {
 	t.Helper()
 	rec, err := ReadState(paths)

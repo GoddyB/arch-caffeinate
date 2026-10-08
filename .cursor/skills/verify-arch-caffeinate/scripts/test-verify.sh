@@ -117,6 +117,7 @@ if mode == "healthy":
         "screenLock": "off",
         "version": "0.1.0",
         "writtenAt": int(time.time() * 1000),
+        "pollMs": 1000,
     }
 else:
     payload = {
@@ -130,6 +131,7 @@ else:
         "screenLock": "immediate",
         "version": "0.1.0",
         "writtenAt": 0,
+        "pollMs": 1000,
     }
 with open(dest, "w") as f:
     json.dump(payload, f)

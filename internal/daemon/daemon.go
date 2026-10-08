@@ -77,16 +77,6 @@ func (c Config) logf(format string, args ...any) {
 	}
 }
 
-func normalize(cfg Config) Config {
-	if cfg.IdleThreshold <= 0 {
-		cfg.IdleThreshold = time.Duration(DefaultIdleSeconds) * time.Second
-	}
-	if cfg.Poll <= 0 {
-		cfg.Poll = time.Duration(DefaultPollMs) * time.Millisecond
-	}
-	return cfg
-}
-
 type Reader interface {
 	Power(context.Context) (core.Power, error)
 	Idle(context.Context) (time.Duration, error)
@@ -152,13 +142,10 @@ func (r Reading) Status() Status {
 }
 
 func (f StateFile) Live(now time.Time) bool {
-	poll := f.PollMs
-	if poll <= 0 {
-		poll = DefaultPollMs
-	}
-	if f.WrittenAt <= 0 || f.PID == nil {
+	if f.PollMs <= 0 || f.WrittenAt <= 0 || f.PID == nil {
 		return false
 	}
+	poll := f.PollMs
 	if now.UnixMilli()-f.WrittenAt > int64(3*poll) {
 		return false
 	}
@@ -289,7 +276,6 @@ func (c Config) wait(ctx context.Context) error {
 }
 
 func Run(ctx context.Context, host Host, paths Paths, cfg Config) error {
-	cfg = normalize(cfg)
 	if cfg.Logf == nil {
 		cfg.Logf = func(format string, args ...any) {
 			AppendLog(paths, fmt.Sprintf(format, args...))
