@@ -4,81 +4,75 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"strings"
+	"strconv"
 
 	"github.com/GoddyB/arch-caffeinate/internal/daemon"
 )
 
-func parseRunArgs(args []string) (idle int, poll int, err error) {
-	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+type positiveInt struct {
+	name  string
+	value int
+	set   bool
+}
+
+func (p *positiveInt) String() string {
+	return strconv.Itoa(p.value)
+}
+
+func (p *positiveInt) Set(raw string) error {
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return fmt.Errorf("--%s needs a positive integer", p.name)
+	}
+	p.value = n
+	p.set = true
+	return nil
+}
+
+func parseFlags(name string, args []string, define func(*flag.FlagSet)) error {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	fs.IntVar(&idle, "idle-seconds", daemon.DefaultIdleSeconds, "")
-	fs.IntVar(&poll, "poll-ms", daemon.DefaultPollMs, "")
+	define(fs)
 	if err := fs.Parse(args); err != nil {
-		return 0, 0, rewriteFlagErr(err)
+		return err
 	}
 	if fs.NArg() != 0 {
-		return 0, 0, fmt.Errorf("unknown flag %s", fs.Arg(0))
+		return fmt.Errorf("unexpected argument %s", fs.Arg(0))
 	}
-	if idle <= 0 {
-		return 0, 0, fmt.Errorf("--idle-seconds needs a positive integer")
+	return nil
+}
+
+func parseRunArgs(args []string) (idle int, poll int, err error) {
+	idleFlag := &positiveInt{name: "idle-seconds", value: daemon.DefaultIdleSeconds}
+	pollFlag := &positiveInt{name: "poll-ms", value: daemon.DefaultPollMs}
+	err = parseFlags("run", args, func(fs *flag.FlagSet) {
+		fs.Var(idleFlag, "idle-seconds", "")
+		fs.Var(pollFlag, "poll-ms", "")
+	})
+	if err != nil {
+		return 0, 0, err
 	}
-	if poll <= 0 {
-		return 0, 0, fmt.Errorf("--poll-ms needs a positive integer")
-	}
-	return idle, poll, nil
+	return idleFlag.value, pollFlag.value, nil
 }
 
 func parseInstallArgs(args []string) (idle int, set bool, err error) {
-	fs := flag.NewFlagSet("install", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.IntVar(&idle, "idle-seconds", 0, "")
-	if err := fs.Parse(args); err != nil {
-		return 0, false, rewriteFlagErr(err)
-	}
-	if fs.NArg() != 0 {
-		return 0, false, fmt.Errorf("unknown flag %s", fs.Arg(0))
-	}
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "idle-seconds" {
-			set = true
-		}
+	idleFlag := &positiveInt{name: "idle-seconds"}
+	err = parseFlags("install", args, func(fs *flag.FlagSet) {
+		fs.Var(idleFlag, "idle-seconds", "")
 	})
-	if set && idle <= 0 {
-		return 0, false, fmt.Errorf("--idle-seconds needs a positive integer")
+	if err != nil {
+		return 0, false, err
 	}
-	return idle, set, nil
+	return idleFlag.value, idleFlag.set, nil
 }
 
 func parseStatusArgs(args []string) (bool, error) {
-	fs := flag.NewFlagSet("status", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
 	asJSON := false
-	fs.BoolVar(&asJSON, "json", false, "")
-	if err := fs.Parse(args); err != nil {
-		return false, rewriteFlagErr(err)
-	}
-	if fs.NArg() != 0 {
-		return false, fmt.Errorf("unknown flag %s", fs.Arg(0))
+	err := parseFlags("status", args, func(fs *flag.FlagSet) {
+		fs.BoolVar(&asJSON, "json", false, "")
+	})
+	if err != nil {
+		return false, err
 	}
 	return asJSON, nil
-}
-
-func rewriteFlagErr(err error) error {
-	msg := err.Error()
-	switch {
-	case strings.HasPrefix(msg, "flag provided but not defined: "):
-		name := strings.TrimLeft(strings.TrimPrefix(msg, "flag provided but not defined: "), "-")
-		return fmt.Errorf("unknown flag --%s", name)
-	case strings.Contains(msg, "needs an argument") && strings.Contains(msg, "idle-seconds"):
-		return fmt.Errorf("--idle-seconds needs a value")
-	case strings.Contains(msg, "needs an argument") && strings.Contains(msg, "poll-ms"):
-		return fmt.Errorf("--poll-ms needs a value")
-	case strings.Contains(msg, "invalid value") && strings.Contains(msg, "idle-seconds"):
-		return fmt.Errorf("--idle-seconds needs a positive integer")
-	case strings.Contains(msg, "invalid value") && strings.Contains(msg, "poll-ms"):
-		return fmt.Errorf("--poll-ms needs a positive integer")
-	default:
-		return err
-	}
 }

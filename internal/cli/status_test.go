@@ -37,7 +37,7 @@ func TestStatusJSON(t *testing.T) {
 	}
 	buf.Reset()
 	err := Run(context.Background(), []string{"status", "--nope"}, opts)
-	if err == nil || err.Error() != "unknown flag --nope" {
+	if err == nil || err.Error() != "flag provided but not defined: -nope" {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -159,11 +159,11 @@ func TestWakeAndRunFlags(t *testing.T) {
 		}
 	}
 	err = Run(context.Background(), []string{"run", "--idle-seconds", "0"}, opts)
-	if err == nil || err.Error() != "--idle-seconds needs a positive integer" {
+	if err == nil || err.Error() != "invalid value \"0\" for flag -idle-seconds: --idle-seconds needs a positive integer" {
 		t.Fatalf("err %v", err)
 	}
 	err = Run(context.Background(), []string{"run", "--idle-seconds"}, opts)
-	if err == nil || err.Error() != "--idle-seconds needs a value" {
+	if err == nil || err.Error() != "flag needs an argument: -idle-seconds" {
 		t.Fatalf("err %v", err)
 	}
 }
