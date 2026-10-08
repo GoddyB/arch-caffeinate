@@ -242,10 +242,12 @@ func (h doctorHost) ScreenLock(context.Context) (core.ScreenLock, error) {
 	}
 	return h.lock, nil
 }
-func (h doctorHost) SleepHeld() bool                                                { return false }
-func (h doctorHost) TakeNotification() bool                                         { return false }
-func (h doctorHost) AcquireSleep(context.Context) error                             { return nil }
-func (h doctorHost) ReleaseSleep(context.Context) error                             { return nil }
-func (h doctorHost) DisplayOff(context.Context) error                               { return nil }
-func (h doctorHost) DeclareActivity(context.Context) error                          { return h.declareErr }
-func (h doctorHost) StartNotifications(context.Context, func(string, ...any)) error { return nil }
+func (h doctorHost) SleepHeld() bool                       { return false }
+func (h doctorHost) TakeNotification() bool                { return false }
+func (h doctorHost) AcquireSleep(context.Context) error    { return nil }
+func (h doctorHost) ReleaseSleep(context.Context) error    { return nil }
+func (h doctorHost) DisplayOff(context.Context) error      { return nil }
+func (h doctorHost) DeclareActivity(context.Context) error { return h.declareErr }
+func (h doctorHost) StartNotifications(context.Context, func(string, ...any)) (<-chan error, error) {
+	return nil, nil
+}

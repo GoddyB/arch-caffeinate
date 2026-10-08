@@ -92,7 +92,7 @@ type Host interface {
 	ReleaseSleep(context.Context) error
 	DisplayOff(context.Context) error
 	DeclareActivity(context.Context) error
-	StartNotifications(context.Context, func(string, ...any)) error
+	StartNotifications(context.Context, func(string, ...any)) (<-chan error, error)
 }
 
 type Reading struct {
@@ -264,12 +264,17 @@ func AppendLog(paths Paths, line string) {
 	_, _ = fmt.Fprintln(f, line)
 }
 
-func (c Config) wait(ctx context.Context) error {
+func (c Config) wait(ctx context.Context, notes <-chan error) error {
 	timer := time.NewTimer(c.Poll)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
+	case err, ok := <-notes:
+		if !ok || err == nil {
+			return fmt.Errorf("notifications ended")
+		}
+		return err
 	case <-timer.C:
 		return nil
 	}
@@ -281,25 +286,29 @@ func Run(ctx context.Context, host Host, paths Paths, cfg Config) error {
 			AppendLog(paths, fmt.Sprintf(format, args...))
 		}
 	}
-	if err := host.StartNotifications(ctx, cfg.logf); err != nil {
-		cfg.logf("notifications: %v", err)
+	notes, err := host.StartNotifications(ctx, cfg.logf)
+	if err != nil {
+		return err
 	}
 	var state core.State
-	tick := func() {
+	poll := func() {
 		next, err := tick(ctx, host, paths, cfg, state)
 		state = next
 		if err != nil {
 			cfg.logf("%s", err.Error())
 		}
 	}
-	tick()
+	poll()
 	for {
-		if err := cfg.wait(ctx); err != nil {
+		if err := cfg.wait(ctx, notes); err != nil {
 			if relErr := host.ReleaseSleep(ctx); relErr != nil {
 				cfg.logf("release: %v", relErr)
 			}
-			return nil
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
 		}
-		tick()
+		poll()
 	}
 }

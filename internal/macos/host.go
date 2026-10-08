@@ -124,16 +124,17 @@ func (s *System) DeclareActivity(ctx context.Context) error {
 	return s.command(ctx, "caffeinate", "-u", "-t", "1").Run()
 }
 
-func (s *System) StartNotifications(ctx context.Context, logf func(string, ...any)) error {
+func (s *System) StartNotifications(ctx context.Context, _ func(string, ...any)) (<-chan error, error) {
 	cmd := s.command(ctx, "/usr/bin/log", "stream", "--style", "ndjson", "--predicate",
 		`process == "usernoted" AND subsystem == "com.apple.unc" AND eventMessage BEGINSWITH "Delivering "`)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
-		return err
+		return nil, err
 	}
+	done := make(chan error, 1)
 	go func() {
 		sc := bufio.NewScanner(stdout)
 		for sc.Scan() {
@@ -144,11 +145,12 @@ func (s *System) StartNotifications(ctx context.Context, logf func(string, ...an
 			}
 		}
 		err := cmd.Wait()
-		if ctx.Err() == nil && logf != nil {
-			logf("log stream exited: %v", err)
+		if ctx.Err() == nil {
+			done <- fmt.Errorf("log stream exited: %v", err)
 		}
+		close(done)
 	}()
-	return nil
+	return done, nil
 }
 
 func (s *System) output(ctx context.Context, name string, args ...string) (string, error) {

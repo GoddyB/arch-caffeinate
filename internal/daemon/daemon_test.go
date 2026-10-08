@@ -26,7 +26,8 @@ type fake struct {
 	note       bool
 	actions    []core.Action
 	fail       map[core.Action]int
-	startErr   error
+	startErr error
+	noteStop <-chan error
 }
 
 func (f *fake) Power(context.Context) (core.Power, error) {
@@ -85,8 +86,14 @@ func (f *fake) DeclareActivity(context.Context) error {
 		f.idle = 0
 	})
 }
-func (f *fake) StartNotifications(context.Context, func(string, ...any)) error {
-	return f.startErr
+func (f *fake) StartNotifications(context.Context, func(string, ...any)) (<-chan error, error) {
+	if f.startErr != nil {
+		return nil, f.startErr
+	}
+	if f.noteStop != nil {
+		return f.noteStop, nil
+	}
+	return nil, nil
 }
 
 func TestTickWritesLiteralStatus(t *testing.T) {
@@ -326,7 +333,7 @@ func TestRunReleasesOnExit(t *testing.T) {
 	}
 }
 
-func TestRunLogsTickErrors(t *testing.T) {
+func TestRunReturnsWhenNotificationsFailToStart(t *testing.T) {
 	home := t.TempDir()
 	host := &fake{
 		powerErr: errors.New("boom"),
@@ -342,16 +349,29 @@ func TestRunLogsTickErrors(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := Run(ctx, host, Paths{Home: home}, cfg); err != nil {
-		t.Fatal(err)
+	err := Run(ctx, host, Paths{Home: home}, cfg)
+	if err == nil || err.Error() != "log stream down" {
+		t.Fatalf("err %v", err)
 	}
-	b, err := os.ReadFile(Paths{Home: home}.LogFile())
-	if err != nil {
-		t.Fatal(err)
+}
+
+func TestRunReturnsWhenNotificationsEnd(t *testing.T) {
+	home := t.TempDir()
+	ended := make(chan error, 1)
+	ended <- errors.New("log stream exited")
+	host := &fake{
+		power:    core.PowerAC,
+		idle:     time.Second,
+		display:  core.DisplayOn,
+		lock:     core.ScreenLockOff,
+		noteStop: ended,
 	}
-	got := string(b)
-	want := "notifications: log stream down\npower: boom\n"
-	if got != want {
-		t.Fatalf("log %q", got)
+	cfg := Config{IdleThreshold: time.Minute, Poll: time.Hour, Now: time.Now}
+	err := Run(context.Background(), host, Paths{Home: home}, cfg)
+	if err == nil || err.Error() != "log stream exited" {
+		t.Fatalf("err %v", err)
+	}
+	if len(host.actions) != 2 || host.actions[0] != core.AcquireSleepAssertion || host.actions[1] != core.ReleaseSleepAssertion {
+		t.Fatalf("actions %v", host.actions)
 	}
 }
