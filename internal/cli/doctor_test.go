@@ -243,6 +243,6 @@ func (h doctorHost) AcquireSleep(context.Context) error    { return nil }
 func (h doctorHost) ReleaseSleep(context.Context) error    { return nil }
 func (h doctorHost) DisplayOff(context.Context) error      { return nil }
 func (h doctorHost) DeclareActivity(context.Context) error { return h.declareErr }
-func (h doctorHost) StartNotifications(context.Context, func(string, ...any)) (<-chan error, error) {
+func (h doctorHost) StartNotifications(context.Context) (<-chan error, error) {
 	return nil, nil
 }

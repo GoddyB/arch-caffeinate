@@ -31,6 +31,8 @@ type fake struct {
 	fail         map[core.Action]int
 	startErr     error
 	noteStop     <-chan error
+	noteStarts   int
+	restarted    chan struct{}
 }
 
 func (f *fake) Power(context.Context) (core.Power, error) {
@@ -91,7 +93,18 @@ func (f *fake) DeclareActivity(context.Context) error {
 		f.idle = 0
 	})
 }
-func (f *fake) StartNotifications(context.Context, func(string, ...any)) (<-chan error, error) {
+func (f *fake) StartNotifications(context.Context) (<-chan error, error) {
+	f.noteStarts++
+	if f.noteStarts > 1 {
+		if f.restarted != nil {
+			select {
+			case <-f.restarted:
+			default:
+				close(f.restarted)
+			}
+		}
+		return make(chan error), nil
+	}
 	if f.startErr != nil {
 		return nil, f.startErr
 	}
@@ -117,7 +130,7 @@ func TestTickWritesLiteralStatus(t *testing.T) {
 		Poll:          250 * time.Millisecond,
 		Now:           func() time.Time { return now },
 	}
-	state, err := tick(context.Background(), host, paths, cfg, core.State{Display: core.DisplayOff})
+	state, err := tick(context.Background(), host, paths, cfg, core.State{Display: core.DisplayOff}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +170,7 @@ func TestTickDoesNotReadPanelOrLock(t *testing.T) {
 		sleep:      true,
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: func() time.Time { return time.UnixMilli(1) }}
-	if _, err := tick(context.Background(), host, Paths{Home: t.TempDir()}, cfg, core.State{}); err != nil {
+	if _, err := tick(context.Background(), host, Paths{Home: t.TempDir()}, cfg, core.State{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if host.displayCalls != 0 || host.lockCalls != 0 {
@@ -176,14 +189,14 @@ func TestTickRetriesFailedDisplayOff(t *testing.T) {
 		fail:    map[core.Action]int{core.TurnDisplayOff: 1},
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: time.Now}
-	state, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOn})
+	state, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOn}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if state.Display != core.DisplayOn {
 		t.Fatalf("display %s", state.Display)
 	}
-	state, err = tick(context.Background(), host, Paths{Home: home}, cfg, state)
+	state, err = tick(context.Background(), host, Paths{Home: home}, cfg, state, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,14 +221,14 @@ func TestTickRetriesFailedDeclare(t *testing.T) {
 		fail:    map[core.Action]int{core.DeclareActivity: 1},
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: time.Now}
-	state, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff})
+	state, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !state.WakeOwed || state.Display != core.DisplayOff {
 		t.Fatalf("state %#v", state)
 	}
-	state, err = tick(context.Background(), host, Paths{Home: home}, cfg, state)
+	state, err = tick(context.Background(), host, Paths{Home: home}, cfg, state, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +238,7 @@ func TestTickRetriesFailedDeclare(t *testing.T) {
 	if !slices.Equal(host.actions, []core.Action{core.DeclareActivity, core.DeclareActivity}) {
 		t.Fatalf("actions %v", host.actions)
 	}
-	state, err = tick(context.Background(), host, Paths{Home: home}, cfg, state)
+	state, err = tick(context.Background(), host, Paths{Home: home}, cfg, state, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +257,7 @@ func TestTickIdleErrorLeavesDisplay(t *testing.T) {
 		sleep:   true,
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: func() time.Time { return time.UnixMilli(1) }}
-	state, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff})
+	state, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +276,7 @@ func TestTickPowerErrorReleases(t *testing.T) {
 		sleep:    true,
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: time.Now}
-	state, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOn})
+	state, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOn}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,24 +298,51 @@ func TestReportLogsAFaultOnce(t *testing.T) {
 		Logf: func(format string, args ...any) {
 			lines = append(lines, fmt.Sprintf(format, args...))
 		},
-		seen: map[string]string{},
 	}
+	fl := &faults{logf: cfg.logf}
 	host := &fake{powerErr: errors.New("boom"), idle: time.Second, display: core.DisplayOn, lock: core.ScreenLockOff}
 	home := t.TempDir()
-	if _, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{}); err != nil {
+	paths := Paths{Home: home}
+	if _, err := tick(context.Background(), host, paths, cfg, core.State{}, fl); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{}); err != nil {
+	if _, err := tick(context.Background(), host, paths, cfg, core.State{}, fl); err != nil {
 		t.Fatal(err)
 	}
 	if len(lines) != 1 || lines[0] != "power: boom" {
 		t.Fatalf("lines %v", lines)
 	}
 	host.powerErr = nil
-	if _, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{}); err != nil {
+	if _, err := tick(context.Background(), host, paths, cfg, core.State{}, fl); err != nil {
 		t.Fatal(err)
 	}
 	if len(lines) != 2 || lines[1] != "power: cleared" {
+		t.Fatalf("lines %v", lines)
+	}
+
+	host.power = core.PowerAC
+	host.sleep = false
+	host.fail = map[core.Action]int{core.AcquireSleepAssertion: 5}
+	before := len(lines)
+	if _, err := tick(context.Background(), host, paths, cfg, core.State{Display: core.DisplayOn}, fl); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tick(context.Background(), host, paths, cfg, core.State{Display: core.DisplayOn}, fl); err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != before+1 || lines[before] != "AcquireSleepAssertion: AcquireSleepAssertion failed" {
+		t.Fatalf("lines %v", lines)
+	}
+	host.power = core.PowerBattery
+	host.sleep = false
+	if _, err := tick(context.Background(), host, paths, cfg, core.State{Display: core.DisplayOn}, fl); err != nil {
+		t.Fatal(err)
+	}
+	host.power = core.PowerAC
+	if _, err := tick(context.Background(), host, paths, cfg, core.State{Display: core.DisplayOn}, fl); err != nil {
+		t.Fatal(err)
+	}
+	if lines[len(lines)-1] != "AcquireSleepAssertion: AcquireSleepAssertion failed" || len(lines) != before+2 {
 		t.Fatalf("lines %v", lines)
 	}
 }
@@ -346,45 +386,102 @@ func TestRunReleasesOnExit(t *testing.T) {
 	}
 }
 
-func TestRunReturnsWhenNotificationsFailToStart(t *testing.T) {
+func countLine(lines []string, want string) int {
+	n := 0
+	for _, line := range lines {
+		if line == want {
+			n++
+		}
+	}
+	return n
+}
+
+func TestRunKeepsSleepWhenNotificationsFailToStart(t *testing.T) {
 	home := t.TempDir()
+	var lines []string
 	host := &fake{
-		powerErr: errors.New("boom"),
-		idle:     time.Second,
-		display:  core.DisplayOn,
-		lock:     core.ScreenLockOff,
-		startErr: errors.New("log stream down"),
+		power:     core.PowerAC,
+		idle:      time.Second,
+		display:   core.DisplayOn,
+		lock:      core.ScreenLockOff,
+		startErr:  errors.New("log stream down"),
+		restarted: make(chan struct{}),
 	}
 	cfg := Config{
 		IdleThreshold: time.Minute,
 		Poll:          time.Hour,
+		NoteBackoff:   time.Millisecond,
 		Now:           time.Now,
+		Logf: func(format string, args ...any) {
+			lines = append(lines, fmt.Sprintf(format, args...))
+		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, host, Paths{Home: home}, cfg) }()
+	select {
+	case <-host.restarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream did not restart")
+	}
+	if !host.sleep {
+		t.Fatal("sleep released")
+	}
+	if countLine(lines, "notifications: log stream down") != 1 {
+		t.Fatalf("lines %v", lines)
+	}
+	if host.noteStarts < 2 {
+		t.Fatalf("starts %d", host.noteStarts)
+	}
 	cancel()
-	err := Run(ctx, host, Paths{Home: home}, cfg)
-	if err == nil || err.Error() != "log stream down" {
-		t.Fatalf("err %v", err)
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestRunReturnsWhenNotificationsEnd(t *testing.T) {
+func TestRunKeepsSleepWhenNotificationsEnd(t *testing.T) {
 	home := t.TempDir()
+	var lines []string
 	ended := make(chan error, 1)
 	ended <- errors.New("log stream exited")
 	host := &fake{
-		power:    core.PowerAC,
-		idle:     time.Second,
-		display:  core.DisplayOn,
-		lock:     core.ScreenLockOff,
-		noteStop: ended,
+		power:     core.PowerAC,
+		idle:      time.Second,
+		display:   core.DisplayOn,
+		lock:      core.ScreenLockOff,
+		noteStop:  ended,
+		restarted: make(chan struct{}),
 	}
-	cfg := Config{IdleThreshold: time.Minute, Poll: time.Hour, Now: time.Now}
-	err := Run(context.Background(), host, Paths{Home: home}, cfg)
-	if err == nil || err.Error() != "log stream exited" {
-		t.Fatalf("err %v", err)
+	cfg := Config{
+		IdleThreshold: time.Minute,
+		Poll:          time.Hour,
+		NoteBackoff:   time.Millisecond,
+		Now:           time.Now,
+		Logf: func(format string, args ...any) {
+			lines = append(lines, fmt.Sprintf(format, args...))
+		},
 	}
-	if !slices.Equal(host.actions, []core.Action{core.AcquireSleepAssertion, core.ReleaseSleepAssertion}) {
-		t.Fatalf("actions %v", host.actions)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, host, Paths{Home: home}, cfg) }()
+	select {
+	case <-host.restarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream did not restart")
+	}
+	if !host.sleep {
+		t.Fatal("sleep released")
+	}
+	if countLine(lines, "notifications: log stream exited") != 1 {
+		t.Fatalf("lines %v", lines)
+	}
+	if host.noteStarts < 2 {
+		t.Fatalf("starts %d", host.noteStarts)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

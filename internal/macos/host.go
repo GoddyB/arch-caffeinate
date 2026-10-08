@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -124,10 +125,14 @@ func (s *System) DeclareActivity(ctx context.Context) error {
 	return s.command(ctx, "caffeinate", "-u", "-t", "1").Run()
 }
 
-func (s *System) StartNotifications(ctx context.Context, _ func(string, ...any)) (<-chan error, error) {
+func (s *System) StartNotifications(ctx context.Context) (<-chan error, error) {
 	cmd := s.command(ctx, "/usr/bin/log", "stream", "--style", "ndjson", "--predicate",
 		`process == "usernoted" AND subsystem == "com.apple.unc" AND eventMessage BEGINSWITH "Delivering "`)
 	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +141,16 @@ func (s *System) StartNotifications(ctx context.Context, _ func(string, ...any))
 	}
 	done := make(chan error, 1)
 	go func() {
+		var last string
+		var stderrDone sync.WaitGroup
+		errLines := bufio.NewScanner(stderr)
+		stderrDone.Add(1)
+		go func() {
+			defer stderrDone.Done()
+			for errLines.Scan() {
+				last = errLines.Text()
+			}
+		}()
 		sc := bufio.NewScanner(stdout)
 		for sc.Scan() {
 			if ParseNotification(sc.Text()) {
@@ -144,9 +159,20 @@ func (s *System) StartNotifications(ctx context.Context, _ func(string, ...any))
 				s.mu.Unlock()
 			}
 		}
-		err := cmd.Wait()
-		if ctx.Err() == nil {
-			done <- fmt.Errorf("log stream exited: %v", err)
+		waitErr := cmd.Wait()
+		stderrDone.Wait()
+		if ctx.Err() != nil {
+			close(done)
+			return
+		}
+		line := strings.TrimSpace(last)
+		switch {
+		case line != "":
+			done <- fmt.Errorf("log stream: %s", line)
+		case waitErr != nil:
+			done <- fmt.Errorf("log stream exited: %v", waitErr)
+		default:
+			done <- fmt.Errorf("log stream exited")
 		}
 		close(done)
 	}()
