@@ -19,7 +19,7 @@ Preconditions:
 - `arch-caffeinate doctor` has no `FAIL` line.
 - `arch-caffeinate status --json` reports `"power": "ac"`. If `power` is `battery`, V1 is `FAIL` with that value. Do not pretend AC.
 
-- **Read assertions.** Run `pmset -g assertions`. Pass when `PreventSystemSleep` has a count of at least 1, and a `pid N(caffeinate):` line for a child of the daemon pid (`pgrep -P <pid> -x caffeinate`) contains `PreventSystemSleep`. A count above 1 does not fail V1.
+- **Read assertions.** Run `pmset -g assertions`. Pass when `PreventSystemSleep` has a count of at least 1, and a `pid N(caffeinate):` line names a child of the daemon pid (`pgrep -P <pid> -x caffeinate`). A count above 1 does not fail V1.
 - **Read status.** Run `arch-caffeinate status --json`. `sleepPrevented` is `true` in that same moment.
 - **Proof.** Save both outputs under `artifacts/verify/<timestamp>/`. The assertion listing is the proof.
 

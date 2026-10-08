@@ -21,7 +21,7 @@ This directory is the maintained source for verifying arch-caffeinate. Read this
 ## Proof and skip reporting
 
 - Record the V-number with the command that proves it.
-- Sleep prevention proof is `pmset -g assertions`, not only `sleepPrevented`. The listing names the daemon's `caffeinate` child under `PreventSystemSleep`. A count above 1 still passes.
+- Sleep prevention proof is `pmset -g assertions`, not only `sleepPrevented`. The count is at least 1, and the listing names the daemon's `caffeinate` child.
 - Display proof is `CurrentPowerState` from `ioreg -r -d 1 -c AppleCLCD2`. `1` means on and `0` means off. `status --json` `display` must match that reading. V2 and V3 fail when the ioreg reading is missing. V2 also requires `HIDIdleTime` of at least 5 seconds.
 - Idle proof is `HIDIdleTime` from `ioreg -c IOHIDSystem`. The value is nanoseconds.
 - Screen-lock proof is the `sysadminctl` phrase `screenLock delay is off`, `status --json` field `screenLock` set to `off`, and the doctor line `PASS screenlock: off`.

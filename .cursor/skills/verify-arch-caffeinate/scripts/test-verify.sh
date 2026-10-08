@@ -160,6 +160,10 @@ case "$cmd" in
       printf '%s\n' 'FAIL macOS: stub'
       exit 1
     fi
+    if [[ -f "$fix/doctor.txt" ]]; then
+      cat "$fix/doctor.txt"
+      exit 0
+    fi
     printf '%s\n' 'PASS macOS' 'PASS heartbeat: fresh' 'PASS screenlock: off'
     ;;
   status)
@@ -260,44 +264,82 @@ assert_fail_lines() {
   done
 }
 
+assert_only_v4_fails() {
+  local log="$1"
+  local label="$2"
+  local id
+  grep -q "^FAIL V4 " "$log" || fail "${label} missing FAIL V4"
+  for id in V1 V2 V3 V5 V6 V7 V8; do
+    grep -q "^PASS ${id} " "$log" || fail "${label} missing PASS ${id}"
+    if grep -q "^FAIL ${id} " "$log"; then
+      fail "${label} unexpected FAIL ${id}"
+    fi
+  done
+}
+
+drive() {
+  local work="$1"
+  local mode="$2"
+  local log="$3"
+  HOME="$work/home" \
+    VERIFY_MODE="$mode" \
+    VERIFY_FIXTURE="$work/fixture" \
+    VERIFY_POLL_SEC=0 \
+    VERIFY_OUT="$work/out" \
+    VERIFY_INSTALL_TEST="$work/install-test.sh" \
+    PATH="$work/bin:$PATH" \
+    "$VERIFY" >"$log" 2>&1
+}
+
+stop_parent() {
+  local work="$1"
+  if [[ -f "$work/fixture/parent_pid" ]]; then
+    kill "$(cat "$work/fixture/parent_pid")" 2>/dev/null || true
+    pkill -P "$(cat "$work/fixture/parent_pid")" 2>/dev/null || true
+  fi
+}
+
 set +e
 healthy_log="$(mktemp)"
 broken_log="$(mktemp)"
 
 HOME_RUN="$(mktemp -d)"
 prepare healthy "$HOME_RUN" 0
-HOME="$HOME_RUN/home" \
-  VERIFY_MODE=healthy \
-  VERIFY_FIXTURE="$HOME_RUN/fixture" \
-  VERIFY_POLL_SEC=0 \
-  VERIFY_OUT="$HOME_RUN/out" \
-  VERIFY_INSTALL_TEST="$HOME_RUN/install-test.sh" \
-  PATH="$HOME_RUN/bin:$PATH" \
-  "$VERIFY" >"$healthy_log" 2>&1
+drive "$HOME_RUN" healthy "$healthy_log"
 healthy_code=$?
 
 BROKEN_RUN="$(mktemp -d)"
 prepare broken "$BROKEN_RUN" 1
-HOME="$BROKEN_RUN/home" \
-  VERIFY_MODE=broken \
-  VERIFY_FIXTURE="$BROKEN_RUN/fixture" \
-  VERIFY_POLL_SEC=0 \
-  VERIFY_OUT="$BROKEN_RUN/out" \
-  VERIFY_INSTALL_TEST="$BROKEN_RUN/install-test.sh" \
-  PATH="$BROKEN_RUN/bin:$PATH" \
-  "$VERIFY" >"$broken_log" 2>&1
+drive "$BROKEN_RUN" broken "$broken_log"
 broken_code=$?
+
+banner_log="$(mktemp)"
+BANNER_RUN="$(mktemp -d)"
+prepare healthy "$BANNER_RUN" 0
+printf '%s\n' 'usage: turn screen lock off in Settings' >"$BANNER_RUN/fixture/screenlock.txt"
+drive "$BANNER_RUN" healthy "$banner_log"
+banner_code=$?
+
+doctor_log="$(mktemp)"
+DOCTOR_RUN="$(mktemp -d)"
+prepare healthy "$DOCTOR_RUN" 0
+printf '%s\n' 'PASS macOS' 'PASS heartbeat: fresh' >"$DOCTOR_RUN/fixture/doctor.txt"
+drive "$DOCTOR_RUN" healthy "$doctor_log"
+doctor_code=$?
 set -e
 
-if [[ -f "$HOME_RUN/fixture/parent_pid" ]]; then
-  kill "$(cat "$HOME_RUN/fixture/parent_pid")" 2>/dev/null || true
-  pkill -P "$(cat "$HOME_RUN/fixture/parent_pid")" 2>/dev/null || true
-fi
+stop_parent "$HOME_RUN"
+stop_parent "$BANNER_RUN"
+stop_parent "$DOCTOR_RUN"
 
 printf '%s\n' "--- healthy exit ${healthy_code} ---"
 cat "$healthy_log"
 printf '%s\n' "--- broken exit ${broken_code} ---"
 cat "$broken_log"
+printf '%s\n' "--- usage banner exit ${banner_code} ---"
+cat "$banner_log"
+printf '%s\n' "--- doctor omission exit ${doctor_code} ---"
+cat "$doctor_log"
 
 [[ "$healthy_code" -eq 0 ]] || fail "healthy stub exited ${healthy_code}"
 grep -q '^FAIL ' "$healthy_log" && fail "healthy stub printed FAIL"
@@ -307,5 +349,12 @@ done
 
 [[ "$broken_code" -ne 0 ]] || fail "broken stub exited 0"
 assert_fail_lines "$broken_log"
+
+[[ "$banner_code" -ne 0 ]] || fail "usage banner exited 0"
+assert_only_v4_fails "$banner_log" "usage banner"
+grep -q 'turn screen lock off' "$banner_log" || fail "usage banner did not quote sysadminctl"
+
+[[ "$doctor_code" -ne 0 ]] || fail "doctor omission exited 0"
+assert_only_v4_fails "$doctor_log" "doctor omission"
 
 printf '%s\n' 'test-verify ok'

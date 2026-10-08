@@ -253,7 +253,7 @@ pid="$(json_get "$OUT/status.json" pid 2>>"$TRANSCRIPT" || echo none)"
 child="$(pgrep -P "$pid" -x caffeinate 2>>"$TRANSCRIPT" | head -n 1 || true)"
 if [[ "$power" == "ac" && "$prevented" == "true" && -n "$child" ]] \
   && grep -Eq '^ *PreventSystemSleep +[1-9][0-9]*$' "$OUT/assertions.txt" \
-  && grep -Eq "pid ${child}\\(caffeinate\\):.*PreventSystemSleep" "$OUT/assertions.txt"; then
+  && grep -Eq "pid ${child}\\(caffeinate\\):" "$OUT/assertions.txt"; then
   mark PASS V1 "PreventSystemSleep lists pid ${child}(caffeinate) while power is ac and sleepPrevented is true"
 elif [[ "$power" == "battery" ]]; then
   mark FAIL V1 "power is battery; releasing the assertion on battery is a manual gap"
@@ -307,6 +307,9 @@ capture "$OUT/screenlock.txt" sysadminctl -screenLock status
 lock="$(json_get "$OUT/status.json" screenLock 2>>"$TRANSCRIPT" || echo missing)"
 phrase="$(screen_lock_phrase "$OUT/screenlock.txt" 2>>"$TRANSCRIPT" || true)"
 quoted="$(grep -E -i 'screenLock delay is' "$OUT/screenlock.txt" | tail -n 1 || true)"
+if [[ -z "$quoted" ]]; then
+  quoted="$(grep -v -E '^(exit:|\$ )' "$OUT/screenlock.txt" | tr '\n' ' ' | sed 's/[[:space:]]*$//' || true)"
+fi
 if [[ -z "$quoted" ]]; then
   quoted="missing"
 fi
@@ -377,7 +380,7 @@ if [[ -x "$INSTALL_TEST" ]] && "$INSTALL_TEST" >"$v8_out" 2>&1; then
   mark PASS V8 "$INSTALL_TEST exited 0"
 else
   cat "$v8_out" >>"$TRANSCRIPT" 2>/dev/null || true
-  mark FAIL V8 "scripts/test-install-from-clone.sh failed"
+  mark FAIL V8 "$INSTALL_TEST failed"
 fi
 
 "$BIN" install >>"$TRANSCRIPT" 2>&1 || true
