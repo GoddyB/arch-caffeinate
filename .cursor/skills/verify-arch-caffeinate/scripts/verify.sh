@@ -269,11 +269,17 @@ fi
 
 line "wake coverage: arch-caffeinate wake stands in for mouse or key input"
 wake_input=0
+hid_reset=0
 reoff=0
 if display_is off; then
+  capture "$OUT/hid-before-wake.txt" ioreg -c IOHIDSystem
+  before_ns="$(hid_ns "$OUT/hid-before-wake.txt" 2>>"$TRANSCRIPT" || true)"
   "$BIN" wake >>"$TRANSCRIPT" 2>&1 || true
-  if wait_until 3 display_is on; then
+  capture "$OUT/hid-after-wake.txt" ioreg -c IOHIDSystem
+  after_ns="$(hid_ns "$OUT/hid-after-wake.txt" 2>>"$TRANSCRIPT" || true)"
+  if [[ -n "$before_ns" && -n "$after_ns" && "$after_ns" -lt "$before_ns" ]] && hold_display on 3; then
     wake_input=1
+    hid_reset=1
   fi
 fi
 if [[ "$wake_input" -eq 1 ]] && wait_until 8 idle_and_off; then
@@ -281,25 +287,36 @@ if [[ "$wake_input" -eq 1 ]] && wait_until 8 idle_and_off; then
 fi
 
 "$BIN" stop >>"$TRANSCRIPT" 2>&1 || true
+pmset displaysleepnow >>"$TRANSCRIPT" 2>&1 || true
+panel_off=0
+if wait_until 3 display_is off; then
+  panel_off=1
+fi
 osascript -e 'display notification "verify" with title "arch-caffeinate"' >>"$TRANSCRIPT" 2>&1 || true
 note_while_stopped=0
-if [[ "$reoff" -eq 1 ]] && hold_display off 3; then
+if [[ "$reoff" -eq 1 && "$panel_off" -eq 1 ]] && hold_display off 3; then
   note_while_stopped=1
 fi
 
+old_pid="$(json_get "$STATE" pid 2>>"$TRANSCRIPT" || echo none)"
 "$BIN" start >>"$TRANSCRIPT" 2>&1 || true
+fresh_daemon() {
+  local now_pid
+  now_pid="$(json_get "$STATE" pid 2>>"$TRANSCRIPT" || true)"
+  [[ -n "$now_pid" && "$now_pid" != "$old_pid" ]] && state_is_fresh
+}
 note_while_started=0
-if wait_until 8 running_is; then
+if wait_until 8 running_is && fresh_daemon; then
   osascript -e 'display notification "verify" with title "arch-caffeinate"' >>"$TRANSCRIPT" 2>&1 || true
   if wait_until 3 display_is on; then
     note_while_started=1
   fi
 fi
 
-if [[ "$wake_input" -eq 1 && "$reoff" -eq 1 && "$note_while_stopped" -eq 1 && "$note_while_started" -eq 1 ]]; then
-  mark PASS V3 "wake stands in for mouse or key input; the display is off again before stop; notification leaves CurrentPowerState 0 while stopped and 1 after start"
+if [[ "$wake_input" -eq 1 && "$hid_reset" -eq 1 && "$reoff" -eq 1 && "$note_while_stopped" -eq 1 && "$note_while_started" -eq 1 ]]; then
+  mark PASS V3 "wake stands in for mouse or key input and HIDIdleTime drops; the display is off again before stop; pmset displaysleepnow leaves it off while stopped; notification turns it on after start"
 else
-  mark FAIL V3 "wake=${wake_input} reoff=${reoff} notification_while_stopped=${note_while_stopped} notification_after_start=${note_while_started}"
+  mark FAIL V3 "wake=${wake_input} hid_reset=${hid_reset} reoff=${reoff} panel_off=${panel_off} notification_while_stopped=${note_while_stopped} notification_after_start=${note_while_started}"
 fi
 
 capture "$OUT/screenlock.txt" sysadminctl -screenLock status

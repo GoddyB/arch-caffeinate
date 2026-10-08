@@ -20,6 +20,10 @@ EOF
 
   cat >"$bin/pmset" <<'EOF'
 #!/bin/sh
+if [ "$1" = "displaysleepnow" ]; then
+  printf '%s\n' 0 >"$VERIFY_FIXTURE/display"
+  exit 0
+fi
 cat "$VERIFY_FIXTURE/assertions.txt"
 EOF
 
@@ -56,7 +60,11 @@ if [[ "${VERIFY_MODE}" == "broken" ]]; then
   printf '%s\n' 'launchctl refused' >&2
   exit 1
 fi
-printf 'pid = %s\n' "$(cat "$VERIFY_FIXTURE/parent_pid")"
+pid_file="$VERIFY_FIXTURE/parent_pid"
+if [ -f "$VERIFY_FIXTURE/daemon_pid" ]; then
+  pid_file="$VERIFY_FIXTURE/daemon_pid"
+fi
+printf 'pid = %s\n' "$(cat "$pid_file")"
 exit 0
 EOF
 
@@ -93,11 +101,14 @@ display = open(os.path.join(fix, "display")).read().strip()
 cleanup = os.path.exists(os.path.join(fix, "cleanup"))
 agent_path = os.path.join(fix, "agent_mode")
 agent = open(agent_path).read().strip() if os.path.exists(agent_path) else ""
+pid_path = os.path.join(fix, "daemon_pid")
+if not os.path.exists(pid_path):
+    pid_path = os.path.join(fix, "parent_pid")
 if mode == "healthy":
     running = agent == "started"
     payload = {
         "running": running,
-        "pid": int(open(os.path.join(fix, "parent_pid")).read()) if running else None,
+        "pid": int(open(pid_path).read()) if running else None,
         "power": "ac",
         "sleepPrevented": True,
         "display": "on" if display == "1" else "off",
@@ -188,6 +199,9 @@ case "$cmd" in
   start)
     if [[ "$VERIFY_MODE" == "healthy" ]]; then
       printf '%s\n' booting >"$fix/agent_mode"
+      parent="$(cat "$fix/parent_pid")"
+      printf '%s\n' "$((parent + 1))" >"$fix/daemon_pid"
+      write_state
     fi
     ;;
   --version)

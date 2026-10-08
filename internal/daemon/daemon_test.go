@@ -80,7 +80,10 @@ func (f *fake) DisplayOff(context.Context) error {
 	return f.act(core.TurnDisplayOff, func() { f.display = core.DisplayOff })
 }
 func (f *fake) DeclareActivity(context.Context) error {
-	return f.act(core.DeclareActivity, func() { f.display = core.DisplayOn })
+	return f.act(core.DeclareActivity, func() {
+		f.display = core.DisplayOn
+		f.idle = 0
+	})
 }
 func (f *fake) StartNotifications(context.Context, func(string, ...any)) error {
 	return f.startErr
@@ -232,7 +235,6 @@ func TestTickRetriesFailedDeclare(t *testing.T) {
 	if len(host.actions) != 2 || host.actions[0] != core.DeclareActivity || host.actions[1] != core.DeclareActivity {
 		t.Fatalf("actions %v", host.actions)
 	}
-	host.idle = time.Second
 	state, err = tick(context.Background(), host, Paths{Home: home}, cfg, state)
 	if err != nil {
 		t.Fatal(err)

@@ -18,15 +18,16 @@ Preconditions:
 - [Display off](./display-off.md) has just left the display fully off.
 - Doctor has no `FAIL` line.
 
-- **Wake coverage.** The display must already be off. Run `arch-caffeinate wake`. That command stands in for mouse or key input. Within 3 seconds, `ioreg -r -d 1 -c AppleCLCD2` shows `"CurrentPowerState"=1` and `status --json` `display` is `"on"`. The PASS line says `wake` is the stand-in.
+- **Wake coverage.** The display must already be off. Capture `HIDIdleTime` from `ioreg -c IOHIDSystem`. Run `arch-caffeinate wake`. That command stands in for mouse or key input. The next `HIDIdleTime` is lower, and for 3 samples `ioreg -r -d 1 -c AppleCLCD2` shows `"CurrentPowerState"=1` and `status --json` `display` is `"on"`. The PASS line says `wake` is the stand-in.
 - **Off again.** Leave input alone. Within 8 seconds, `HIDIdleTime` is at least 5 seconds and `CurrentPowerState` is `0` again. `stop` does not turn the panel off.
-- **Notification while stopped.** Run `arch-caffeinate stop`, then `osascript -e 'display notification "verify" with title "arch-caffeinate"'`. For 3 samples, `CurrentPowerState` stays `0`.
-- **Notification after start.** Run `arch-caffeinate start`. Wait until `status --json` reports `"running": true`. Then post the same notification, and expect `CurrentPowerState` `1`.
+- **Turn the display off again.** Run `arch-caffeinate stop`, then `pmset displaysleepnow`. Within 3 seconds `CurrentPowerState` is `0`.
+- **Notification while stopped.** Post `osascript -e 'display notification "verify" with title "arch-caffeinate"`. For 3 samples, `CurrentPowerState` stays `0`.
+- **Notification after start.** Run `arch-caffeinate start`. Wait until `status --json` reports `"running": true` and `state.json` has a new pid with a fresh `writtenAt`. Then post the same notification, and expect `CurrentPowerState` `1`.
 - **Proof.** Save the off listing, the wake command, and the following on listing for each sub-feature.
 
 ## Gotchas
 
 - `arch-caffeinate wake` is simulated user activity. It has the same effect as `caffeinate -u -t 1`. A remote run cannot move the mouse. Record a physical mouse move only if you perform it.
 - A notification that never arrives does not prove `v3-notification`.
-- How long a notification keeps the display on is a manual gap. This check only separates a stopped agent from a started one. It does not measure whether the next poll turns the display off again.
+- `HIDIdleTime` must drop across `wake`. That drop is what keeps the next poll from turning the display off again.
 - Prove each sub-feature from a fully off display. Waking an already-on display proves nothing.
