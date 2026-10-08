@@ -139,13 +139,15 @@ func TestWakeAndRunFlags(t *testing.T) {
 	if err := Run(context.Background(), []string{"wake"}, opts); err != nil {
 		t.Fatal(err)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 	for _, args := range [][]string{
 		{"run", "--idle-seconds", "0"},
 		{"run", "--idle-seconds", "-3"},
 		{"run", "--poll-ms", "0"},
 		{"run", "--idle-seconds"},
 	} {
-		err := Run(context.Background(), args, opts)
+		err := Run(ctx, args, opts)
 		if err == nil {
 			t.Fatalf("args %v", args)
 		}
