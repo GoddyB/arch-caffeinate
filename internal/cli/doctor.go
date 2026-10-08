@@ -34,12 +34,7 @@ func doctor(ctx context.Context, opts Options, paths daemon.Paths) error {
 		line("PASS", "launchagent: loaded")
 	}
 	saved, err := daemon.ReadState(paths)
-	poll := saved.PollMs
-	if poll <= 0 {
-		poll = daemon.DefaultPollMs
-	}
-	fresh := err == nil && saved.WrittenAt > 0 && opts.Now().UnixMilli()-saved.WrittenAt <= int64(3*poll)
-	if fresh && saved.PID != nil && alive(*saved.PID) {
+	if err == nil && saved.Live(opts.Now()) {
 		line("PASS", "heartbeat: fresh")
 	} else {
 		line("FAIL", "heartbeat: stale or missing")

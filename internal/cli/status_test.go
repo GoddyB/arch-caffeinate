@@ -56,9 +56,6 @@ func TestStatusTextAndDeadDaemonThreshold(t *testing.T) {
 		t.Fatal(err)
 	}
 	dead := 1 << 30
-	if alive(dead) {
-		t.Fatal("pid is alive")
-	}
 	pid := dead
 	rec := daemon.StateFile{
 		Status: daemon.Status{
@@ -70,7 +67,7 @@ func TestStatusTextAndDeadDaemonThreshold(t *testing.T) {
 			Display:              "on",
 			ScreenLock:           "off",
 		},
-		WrittenAt: 1,
+		WrittenAt: time.Now().UnixMilli(),
 		PollMs:    1000,
 	}
 	b, err := json.Marshal(rec)
@@ -109,7 +106,7 @@ func TestStatusRunningDaemon(t *testing.T) {
 			SleepPrevented:       true,
 			IdleThresholdSeconds: 9,
 		},
-		WrittenAt: 1,
+		WrittenAt: time.Now().UnixMilli(),
 		PollMs:    1000,
 	}
 	b, err := json.Marshal(rec)

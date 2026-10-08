@@ -210,7 +210,7 @@ func programArguments(data []byte) ([]string, error) {
 }
 
 func installedIdle(paths daemon.Paths) int {
-	idle, _, _ := parseRunArgs(nil)
+	idle := daemon.DefaultIdleSeconds
 	b, err := os.ReadFile(paths.Plist())
 	if err != nil {
 		return idle

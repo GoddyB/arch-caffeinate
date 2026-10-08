@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/GoddyB/arch-caffeinate/internal/core"
@@ -127,6 +128,7 @@ func Snapshot(ctx context.Context, host Reader) Reading {
 	}
 	r.Idle, err = host.Idle(ctx)
 	if err != nil {
+		r.Idle = 0
 		r.IdleErr = err
 	}
 	r.Display, err = host.Display(ctx)
@@ -141,6 +143,37 @@ func Snapshot(ctx context.Context, host Reader) Reading {
 	}
 	r.SleepHeld = host.SleepHeld()
 	return r
+}
+
+func (r Reading) Status() Status {
+	return Status{
+		Power:       r.Power.String(),
+		Display:     r.Display.String(),
+		IdleSeconds: r.Idle.Seconds(),
+		ScreenLock:  string(r.Lock),
+	}
+}
+
+func (f StateFile) Live(now time.Time) bool {
+	poll := f.PollMs
+	if poll <= 0 {
+		poll = DefaultPollMs
+	}
+	if f.WrittenAt <= 0 || f.PID == nil {
+		return false
+	}
+	if now.UnixMilli()-f.WrittenAt > int64(3*poll) {
+		return false
+	}
+	return alive(*f.PID)
+}
+
+func alive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
 }
 
 func Tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.State) (core.State, error) {
@@ -173,30 +206,13 @@ func Tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.St
 		}
 		return err
 	})
-	display := core.DisplayOn.String()
-	if reading.DisplayErr == nil {
-		display = reading.Display.String()
-	}
-	idleSeconds := 0.0
-	if reading.IdleErr == nil {
-		idleSeconds = reading.Idle.Seconds()
-	}
-	lock := string(core.ScreenLockUnknown)
-	if reading.LockErr == nil {
-		lock = string(reading.Lock)
-	}
 	pid := os.Getpid()
-	st := Status{
-		Running:              true,
-		PID:                  &pid,
-		Power:                reading.Power.String(),
-		SleepPrevented:       host.SleepHeld(),
-		Display:              display,
-		IdleSeconds:          idleSeconds,
-		IdleThresholdSeconds: int(cfg.IdleThreshold / time.Second),
-		ScreenLock:           lock,
-		Version:              Version,
-	}
+	st := reading.Status()
+	st.Running = true
+	st.PID = &pid
+	st.SleepPrevented = host.SleepHeld()
+	st.IdleThresholdSeconds = int(cfg.IdleThreshold / time.Second)
+	st.Version = Version
 	rec := StateFile{
 		Status:    st,
 		WrittenAt: cfg.now().UnixMilli(),
