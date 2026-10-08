@@ -62,7 +62,6 @@ type Config struct {
 	Poll          time.Duration
 	Now           func() time.Time
 	Logf          func(string, ...any)
-	Wait          func(context.Context) error
 }
 
 func (c Config) now() time.Time {
@@ -115,7 +114,6 @@ type Reading struct {
 	DisplayErr error
 	Lock       core.ScreenLock
 	LockErr    error
-	SleepHeld  bool
 }
 
 func Snapshot(ctx context.Context, host Reader) Reading {
@@ -141,7 +139,6 @@ func Snapshot(ctx context.Context, host Reader) Reading {
 		r.Lock = core.ScreenLockUnknown
 		r.LockErr = err
 	}
-	r.SleepHeld = host.SleepHeld()
 	return r
 }
 
@@ -176,8 +173,7 @@ func alive(pid int) bool {
 	return proc.Signal(syscall.Signal(0)) == nil
 }
 
-func Tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.State) (core.State, error) {
-	cfg = normalize(cfg)
+func tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.State) (core.State, error) {
 	note := host.TakeNotification()
 	reading := Snapshot(ctx, host)
 	if reading.PowerErr != nil {
@@ -240,9 +236,6 @@ func apply(ctx context.Context, host Host, action core.Action) error {
 }
 
 func writeState(paths Paths, rec StateFile) error {
-	if err := os.MkdirAll(filepath.Dir(paths.StateFile()), 0o755); err != nil {
-		return err
-	}
 	b, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
 		return err
@@ -285,9 +278,6 @@ func AppendLog(paths Paths, line string) {
 }
 
 func (c Config) wait(ctx context.Context) error {
-	if c.Wait != nil {
-		return c.Wait(ctx)
-	}
 	timer := time.NewTimer(c.Poll)
 	defer timer.Stop()
 	select {
@@ -310,7 +300,7 @@ func Run(ctx context.Context, host Host, paths Paths, cfg Config) error {
 	}
 	var state core.State
 	tick := func() {
-		next, err := Tick(ctx, host, paths, cfg, state)
+		next, err := tick(ctx, host, paths, cfg, state)
 		state = next
 		if err != nil {
 			cfg.logf("%s", err.Error())

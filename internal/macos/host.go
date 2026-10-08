@@ -3,6 +3,7 @@ package macos
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
@@ -41,7 +42,7 @@ func (s *System) Idle(ctx context.Context) (time.Duration, error) {
 	}
 	d, ok := ParseIdle(out)
 	if !ok {
-		return 0, errMissing("HIDIdleTime")
+		return 0, fmt.Errorf("HIDIdleTime missing")
 	}
 	return d, nil
 }
@@ -62,7 +63,7 @@ func (s *System) Display(ctx context.Context) (core.Display, error) {
 	}
 	d, ok := ParseDisplay(out)
 	if !ok {
-		return core.DisplayOn, errMissing("CurrentPowerState")
+		return core.DisplayOn, fmt.Errorf("CurrentPowerState missing")
 	}
 	return d, nil
 }
@@ -149,12 +150,6 @@ func (s *System) StartNotifications(ctx context.Context, logf func(string, ...an
 	}()
 	return nil
 }
-
-type missing string
-
-func (m missing) Error() string { return string(m) }
-
-func errMissing(name string) error { return missing(name + " missing") }
 
 func (s *System) output(ctx context.Context, name string, args ...string) (string, error) {
 	b, err := s.command(ctx, name, args...).Output()

@@ -7,11 +7,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/GoddyB/arch-caffeinate/internal/daemon"
+	"github.com/GoddyB/arch-caffeinate/internal/macos"
 )
 
 type Options struct {
@@ -44,7 +47,7 @@ func (o Options) withDefaults() Options {
 		o.UID = os.Getuid()
 	}
 	if o.Host == nil {
-		o.Host = &macosSystem{}
+		o.Host = &macos.System{}
 	}
 	if o.GOOS == "" {
 		o.GOOS = runtime.GOOS
@@ -71,17 +74,12 @@ func defaultLoginLookup() (string, error) {
 }
 
 func Main(args []string) int {
-	opts := Options{
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-		Getenv: os.Getenv,
-		UID:    os.Getuid(),
-		Now:    time.Now,
-	}
+	opts := Options{}
 	if exe, err := os.Executable(); err == nil {
 		opts.Executable = exe
 	}
-	ctx, stop := signalNotifyContext()
+	opts = opts.withDefaults()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if err := Run(ctx, args, opts); err != nil {
 		if !errors.Is(err, errDoctor) {
@@ -130,9 +128,6 @@ func Run(ctx context.Context, args []string, opts Options) error {
 			IdleThreshold: time.Duration(idle) * time.Second,
 			Poll:          time.Duration(poll) * time.Millisecond,
 			Now:           opts.Now,
-			Logf: func(format string, args ...any) {
-				daemon.AppendLog(paths, fmt.Sprintf(format, args...))
-			},
 		}
 		return daemon.Run(ctx, opts.Host, paths, cfg)
 	case "status":

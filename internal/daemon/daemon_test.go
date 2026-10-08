@@ -102,7 +102,7 @@ func TestTickWritesLiteralStatus(t *testing.T) {
 		Poll:          250 * time.Millisecond,
 		Now:           func() time.Time { return now },
 	}
-	state, err := Tick(context.Background(), host, paths, cfg, core.State{Display: core.DisplayOff})
+	state, err := tick(context.Background(), host, paths, cfg, core.State{Display: core.DisplayOff})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestTickDisplayFollowsLiveReading(t *testing.T) {
 		sleep:   true,
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: func() time.Time { return time.UnixMilli(1) }}
-	_, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff})
+	_, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestTickDisplayFollowsLiveReading(t *testing.T) {
 	host.displayErr = errors.New("no panel")
 	host.idleErr = errors.New("no idle")
 	home2 := t.TempDir()
-	_, err = Tick(context.Background(), host, Paths{Home: home2}, cfg, core.State{Display: core.DisplayOff})
+	_, err = tick(context.Background(), host, Paths{Home: home2}, cfg, core.State{Display: core.DisplayOff})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,14 +183,14 @@ func TestTickRetriesFailedDisplayOff(t *testing.T) {
 		fail:    map[core.Action]int{core.TurnDisplayOff: 1},
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: time.Now}
-	state, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOn})
+	state, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOn})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if state.Display != core.DisplayOn {
 		t.Fatalf("display %s", state.Display)
 	}
-	state, err = Tick(context.Background(), host, Paths{Home: home}, cfg, state)
+	state, err = tick(context.Background(), host, Paths{Home: home}, cfg, state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,14 +215,14 @@ func TestTickRetriesFailedDeclare(t *testing.T) {
 		fail:    map[core.Action]int{core.DeclareActivity: 1},
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: time.Now}
-	state, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff})
+	state, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !state.WakeOwed || state.Display != core.DisplayOff {
 		t.Fatalf("state %#v", state)
 	}
-	state, err = Tick(context.Background(), host, Paths{Home: home}, cfg, state)
+	state, err = tick(context.Background(), host, Paths{Home: home}, cfg, state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestTickRetriesFailedDeclare(t *testing.T) {
 		t.Fatalf("actions %v", host.actions)
 	}
 	host.idle = time.Second
-	state, err = Tick(context.Background(), host, Paths{Home: home}, cfg, state)
+	state, err = tick(context.Background(), host, Paths{Home: home}, cfg, state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestTickIdleErrorLeavesDisplay(t *testing.T) {
 		sleep:   true,
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: func() time.Time { return time.UnixMilli(1) }}
-	state, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff})
+	state, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func TestTickPowerErrorReleases(t *testing.T) {
 		sleep:    true,
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: time.Now}
-	state, err := Tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOn})
+	state, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOn})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,11 +301,10 @@ func TestRunReleasesOnExit(t *testing.T) {
 		IdleThreshold: time.Minute,
 		Poll:          time.Hour,
 		Now:           time.Now,
-		Wait: func(context.Context) error {
-			return context.Canceled
-		},
 	}
-	if err := Run(context.Background(), host, Paths{Home: home}, cfg); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := Run(ctx, host, Paths{Home: home}, cfg); err != nil {
 		t.Fatal(err)
 	}
 	if len(host.actions) != 2 || host.actions[0] != core.AcquireSleepAssertion || host.actions[1] != core.ReleaseSleepAssertion {
@@ -326,9 +325,10 @@ func TestRunLogsTickErrors(t *testing.T) {
 		IdleThreshold: time.Minute,
 		Poll:          time.Hour,
 		Now:           time.Now,
-		Wait:          func(context.Context) error { return context.Canceled },
 	}
-	if err := Run(context.Background(), host, Paths{Home: home}, cfg); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := Run(ctx, host, Paths{Home: home}, cfg); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(Paths{Home: home}.LogFile())

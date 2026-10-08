@@ -23,11 +23,7 @@ func domainTarget(uid int) string {
 func install(ctx context.Context, opts Options, paths daemon.Paths, idle int, set bool) error {
 	exe := opts.Executable
 	if exe == "" {
-		var err error
-		exe, err = os.Executable()
-		if err != nil {
-			return err
-		}
+		return fmt.Errorf("executable path is unknown")
 	}
 	if err := copyFile(exe, paths.Bin()); err != nil {
 		return err
