@@ -189,7 +189,7 @@ func writeStateAt(t *testing.T, home string, written int64) {
 	t.Helper()
 	pid := os.Getpid()
 	rec := daemon.StateFile{
-		Status:    daemon.Status{PID: &pid},
+		PID:       &pid,
 		WrittenAt: written,
 		PollMs:    1000,
 	}

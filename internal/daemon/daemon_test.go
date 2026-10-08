@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"regexp"
 	"testing"
 	"time"
 
@@ -15,20 +14,22 @@ import (
 )
 
 type fake struct {
-	power      core.Power
-	powerErr   error
-	idle       time.Duration
-	idleErr    error
-	display    core.Display
-	displayErr error
-	lock       core.ScreenLock
-	lockErr    error
-	sleep      bool
-	note       bool
-	actions    []core.Action
-	fail       map[core.Action]int
-	startErr error
-	noteStop <-chan error
+	power        core.Power
+	powerErr     error
+	idle         time.Duration
+	idleErr      error
+	display      core.Display
+	displayErr   error
+	displayCalls int
+	lock         core.ScreenLock
+	lockErr      error
+	lockCalls    int
+	sleep        bool
+	note         bool
+	actions      []core.Action
+	fail         map[core.Action]int
+	startErr     error
+	noteStop     <-chan error
 }
 
 func (f *fake) Power(context.Context) (core.Power, error) {
@@ -44,12 +45,14 @@ func (f *fake) Idle(context.Context) (time.Duration, error) {
 	return f.idle, nil
 }
 func (f *fake) Display(context.Context) (core.Display, error) {
+	f.displayCalls++
 	if f.displayErr != nil {
 		return core.DisplayOn, f.displayErr
 	}
 	return f.display, nil
 }
 func (f *fake) ScreenLock(context.Context) (core.ScreenLock, error) {
+	f.lockCalls++
 	if f.lockErr != nil {
 		return core.ScreenLockUnknown, f.lockErr
 	}
@@ -117,11 +120,11 @@ func TestTickWritesLiteralStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := mustStatus(t, paths)
+	st := mustHeartbeat(t, paths)
 	if state.WakeOwed || state.Display != core.DisplayOn {
 		t.Fatalf("state %#v", state)
 	}
-	if st.Power != "battery" || st.SleepPrevented || st.Display != "off" || st.ScreenLock != "delay:300" || st.IdleThresholdSeconds != 5 {
+	if st.SleepPrevented || st.IdleThresholdSeconds != 5 {
 		t.Fatalf("%+v", st)
 	}
 	raw, err := os.ReadFile(paths.StateFile())
@@ -132,20 +135,10 @@ func TestTickWritesLiteralStatus(t *testing.T) {
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
-	ver, _ := got["version"].(string)
-	if !regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(ver) {
-		t.Fatalf("version %q", ver)
-	}
-	delete(got, "version")
 	want := map[string]any{
-		"running":              true,
 		"pid":                  float64(os.Getpid()),
-		"power":                "battery",
 		"sleepPrevented":       false,
-		"display":              "off",
-		"idleSeconds":          float64(2),
 		"idleThresholdSeconds": float64(5),
-		"screenLock":           "delay:300",
 		"writtenAt":            float64(1_700_000_000_000),
 		"pollMs":               float64(250),
 	}
@@ -154,32 +147,20 @@ func TestTickWritesLiteralStatus(t *testing.T) {
 	}
 }
 
-func TestTickDisplayFollowsLiveReading(t *testing.T) {
-	home := t.TempDir()
+func TestTickDoesNotReadPanelOrLock(t *testing.T) {
 	host := &fake{
-		power:   core.PowerAC,
-		idle:    time.Second,
-		display: core.DisplayOff,
-		lock:    core.ScreenLockOff,
-		sleep:   true,
+		power:      core.PowerAC,
+		idle:       time.Second,
+		displayErr: errors.New("no panel"),
+		lockErr:    errors.New("no lock"),
+		sleep:      true,
 	}
 	cfg := Config{IdleThreshold: 5 * time.Second, Poll: time.Second, Now: func() time.Time { return time.UnixMilli(1) }}
-	_, err := tick(context.Background(), host, Paths{Home: home}, cfg, core.State{Display: core.DisplayOff})
-	if err != nil {
+	if _, err := tick(context.Background(), host, Paths{Home: t.TempDir()}, cfg, core.State{}); err != nil {
 		t.Fatal(err)
 	}
-	if st := mustStatus(t, Paths{Home: home}); st.Display != "off" {
-		t.Fatalf("display %s", st.Display)
-	}
-	host.displayErr = errors.New("no panel")
-	host.idleErr = errors.New("no idle")
-	home2 := t.TempDir()
-	_, err = tick(context.Background(), host, Paths{Home: home2}, cfg, core.State{Display: core.DisplayOff})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st := mustStatus(t, Paths{Home: home2}); st.Display != "on" {
-		t.Fatalf("unknown display %s", st.Display)
+	if host.displayCalls != 0 || host.lockCalls != 0 {
+		t.Fatalf("display %d lock %d", host.displayCalls, host.lockCalls)
 	}
 }
 
@@ -266,9 +247,8 @@ func TestTickIdleErrorLeavesDisplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := mustStatus(t, Paths{Home: home})
-	if state.Display != core.DisplayOff || st.IdleSeconds != 0 || len(host.actions) != 0 {
-		t.Fatalf("state %#v idle %v actions %v", state, st.IdleSeconds, host.actions)
+	if state.Display != core.DisplayOff || len(host.actions) != 0 {
+		t.Fatalf("state %#v actions %v", state, host.actions)
 	}
 }
 
@@ -286,8 +266,8 @@ func TestTickPowerErrorReleases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := mustStatus(t, Paths{Home: home})
-	if state.Display != core.DisplayOn || st.Power != "unknown" || st.SleepPrevented {
+	st := mustHeartbeat(t, Paths{Home: home})
+	if state.Display != core.DisplayOn || st.SleepPrevented {
 		t.Fatalf("state %#v status %+v", state, st)
 	}
 	if len(host.actions) != 1 || host.actions[0] != core.ReleaseSleepAssertion {
@@ -329,7 +309,7 @@ func TestReportLogsAFaultOnce(t *testing.T) {
 func TestLiveRejectsNonPositivePoll(t *testing.T) {
 	pid := os.Getpid()
 	rec := StateFile{
-		Status:    Status{PID: &pid},
+		PID:       &pid,
 		WrittenAt: time.Now().UnixMilli(),
 		PollMs:    0,
 	}
@@ -338,13 +318,13 @@ func TestLiveRejectsNonPositivePoll(t *testing.T) {
 	}
 }
 
-func mustStatus(t *testing.T, paths Paths) Status {
+func mustHeartbeat(t *testing.T, paths Paths) StateFile {
 	t.Helper()
 	rec, err := ReadState(paths)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return rec.Status
+	return rec
 }
 
 func TestRunReleasesOnExit(t *testing.T) {

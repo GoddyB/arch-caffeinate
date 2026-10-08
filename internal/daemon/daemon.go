@@ -32,9 +32,11 @@ type Status struct {
 }
 
 type StateFile struct {
-	Status
-	WrittenAt int64 `json:"writtenAt"`
-	PollMs    int   `json:"pollMs"`
+	PID                  *int  `json:"pid"`
+	SleepPrevented       bool  `json:"sleepPrevented"`
+	IdleThresholdSeconds int   `json:"idleThresholdSeconds"`
+	WrittenAt            int64 `json:"writtenAt"`
+	PollMs               int   `json:"pollMs"`
 }
 
 type Paths struct {
@@ -185,15 +187,20 @@ func alive(pid int) bool {
 
 func tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.State) (core.State, error) {
 	note := host.TakeNotification()
-	reading := Snapshot(ctx, host)
-	cfg.report("power", reading.PowerErr)
-	cfg.report("idle", reading.IdleErr)
-	cfg.report("display", reading.DisplayErr)
-	cfg.report("screenlock", reading.LockErr)
+	power, powerErr := host.Power(ctx)
+	if powerErr != nil {
+		power = core.PowerUnknown
+	}
+	idle, idleErr := host.Idle(ctx)
+	if idleErr != nil {
+		idle = 0
+	}
+	cfg.report("power", powerErr)
+	cfg.report("idle", idleErr)
 	obs := core.Observation{
-		Power:                 reading.Power,
-		HIDIdle:               reading.Idle,
-		IdleKnown:             reading.IdleErr == nil,
+		Power:                 power,
+		HIDIdle:               idle,
+		IdleKnown:             idleErr == nil,
 		SleepHeld:             host.SleepHeld(),
 		NotificationDelivered: note,
 	}
@@ -203,16 +210,12 @@ func tick(ctx context.Context, host Host, paths Paths, cfg Config, state core.St
 		return err
 	})
 	pid := os.Getpid()
-	st := reading.Status()
-	st.Running = true
-	st.PID = &pid
-	st.SleepPrevented = host.SleepHeld()
-	st.IdleThresholdSeconds = int(cfg.IdleThreshold / time.Second)
-	st.Version = Version
 	rec := StateFile{
-		Status:    st,
-		WrittenAt: cfg.now().UnixMilli(),
-		PollMs:    int(cfg.Poll / time.Millisecond),
+		PID:                  &pid,
+		SleepPrevented:       host.SleepHeld(),
+		IdleThresholdSeconds: int(cfg.IdleThreshold / time.Second),
+		WrittenAt:            cfg.now().UnixMilli(),
+		PollMs:               int(cfg.Poll / time.Millisecond),
 	}
 	if err := writeState(paths, rec); err != nil {
 		return next, err
