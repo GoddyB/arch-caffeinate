@@ -91,6 +91,21 @@ if [[ -z "$BIN" ]]; then
   missing_cli
 fi
 
+was_loaded=0
+if launchctl print "gui/${UID}/${LABEL}" >/dev/null 2>&1; then
+  was_loaded=1
+fi
+
+restore_state() {
+  "$BIN" install >/dev/null 2>&1 || true
+  if [[ "$was_loaded" -eq 1 ]]; then
+    "$BIN" startup install >/dev/null 2>&1 || true
+  else
+    "$BIN" startup remove >/dev/null 2>&1 || true
+  fi
+}
+trap restore_state EXIT
+
 json_get() {
   python3 - "$1" "$2" <<'PY'
 import json, sys
@@ -181,6 +196,15 @@ running_is() {
   [[ "$(json_get "$OUT/status.json" running 2>>"$TRANSCRIPT" || true)" == "true" ]]
 }
 
+running_is_false() {
+  "$BIN" status --json >"$OUT/status.json" 2>>"$TRANSCRIPT" || return 1
+  [[ "$(json_get "$OUT/status.json" running 2>>"$TRANSCRIPT" || true)" == "false" ]]
+}
+
+agent_loaded() {
+  launchctl print "gui/${UID}/${LABEL}" >/dev/null 2>>"$TRANSCRIPT"
+}
+
 screen_lock_phrase() {
   python3 - "$1" <<'PY'
 import re, sys
@@ -212,18 +236,35 @@ sys.exit(1)
 PY
 }
 
-install_ok=0
-if "$BIN" install --idle-seconds 5 >>"$TRANSCRIPT" 2>&1; then
-  trap '"$BIN" install >/dev/null 2>&1' EXIT
-  cp "$PLIST" "$OUT/plist.1"
-  if "$BIN" install --idle-seconds 5 >>"$TRANSCRIPT" 2>&1; then
-    if cmp -s "$PLIST" "$OUT/plist.1"; then
-      install_ok=1
-    fi
-  fi
+"$BIN" startup remove >>"$TRANSCRIPT" 2>&1 || true
+if wait_until 5 running_is_false && ! agent_loaded; then
+  line "PASS startup remove unloads the agent and status reports not running"
+else
+  line "FAIL startup remove left the agent loaded or status still reports running"
+  FAILS=$((FAILS + 1))
 fi
 
-if wait_until 3 state_is_fresh; then
+install_ok=0
+not_loaded=0
+if "$BIN" install --idle-seconds 5 >>"$TRANSCRIPT" 2>&1; then
+  cp "$PLIST" "$OUT/plist.1"
+  if ! agent_loaded; then
+    not_loaded=1
+  fi
+  if "$BIN" install --idle-seconds 5 >>"$TRANSCRIPT" 2>&1 && cmp -s "$PLIST" "$OUT/plist.1"; then
+    install_ok=1
+  fi
+fi
+if [[ "$not_loaded" -eq 1 ]]; then
+  line "PASS install writes the plist without loading the agent"
+else
+  line "FAIL install loaded the agent or install failed"
+  FAILS=$((FAILS + 1))
+fi
+
+"$BIN" startup install >>"$TRANSCRIPT" 2>&1 || true
+
+if wait_until 8 state_is_fresh; then
   line "PASS heartbeat writtenAt is fresh"
 else
   line "FAIL heartbeat writtenAt is not fresh"
@@ -294,7 +335,7 @@ if [[ "$wake_input" -eq 1 ]] && wait_until 8 idle_and_off; then
   reoff=1
 fi
 
-"$BIN" stop >>"$TRANSCRIPT" 2>&1 || true
+"$BIN" startup remove >>"$TRANSCRIPT" 2>&1 || true
 pmset displaysleepnow >>"$TRANSCRIPT" 2>&1 || true
 panel_off=0
 if wait_until 3 display_is off; then
@@ -307,7 +348,7 @@ if [[ "$reoff" -eq 1 && "$panel_off" -eq 1 ]] && hold_display off 3; then
 fi
 
 old_pid="$(json_get "$STATE" pid 2>>"$TRANSCRIPT" || echo none)"
-"$BIN" start >>"$TRANSCRIPT" 2>&1 || true
+"$BIN" startup install >>"$TRANSCRIPT" 2>&1 || true
 fresh_daemon() {
   local now_pid
   now_pid="$(json_get "$STATE" pid 2>>"$TRANSCRIPT" || true)"
@@ -325,7 +366,7 @@ if wait_until 8 running_is && fresh_daemon; then
 fi
 
 if [[ "$wake_input" -eq 1 && "$hid_reset" -eq 1 && "$reoff" -eq 1 && "$note_while_stopped" -eq 1 && "$note_while_started" -eq 1 ]]; then
-  mark PASS V3 "wake stands in for mouse or key input and HIDIdleTime drops; the display is off again before stop; pmset displaysleepnow leaves it off while stopped; notification turns it on after start"
+  mark PASS V3 "wake stands in for mouse or key input and HIDIdleTime drops; the display is off again before startup remove; pmset displaysleepnow leaves it off while unloaded; notification turns it on after startup install"
 else
   mark FAIL V3 "wake=${wake_input} hid_reset=${hid_reset} reoff=${reoff} panel_off=${panel_off} notification_while_stopped=${note_while_stopped} notification_after_start=${note_while_started}"
 fi
@@ -413,12 +454,17 @@ else
 fi
 
 "$BIN" install >>"$TRANSCRIPT" 2>&1 || true
+if [[ "$was_loaded" -eq 1 ]]; then
+  "$BIN" startup install >>"$TRANSCRIPT" 2>&1 || true
+else
+  "$BIN" startup remove >>"$TRANSCRIPT" 2>&1 || true
+fi
 threshold_is_600() {
   "$BIN" status --json >"$OUT/status-after-cleanup.json" 2>>"$TRANSCRIPT" || return 1
   [[ "$(json_get "$OUT/status-after-cleanup.json" idleThresholdSeconds 2>>"$TRANSCRIPT" || true)" == "600" ]]
 }
 restored_ok=0
-if wait_until 3 threshold_is_600; then
+if wait_until 8 threshold_is_600; then
   restored_ok=1
 fi
 if [[ "$restored_ok" -eq 1 ]] && [[ -f "$PLIST" ]] && ! grep -q -- '--idle-seconds' "$PLIST"; then

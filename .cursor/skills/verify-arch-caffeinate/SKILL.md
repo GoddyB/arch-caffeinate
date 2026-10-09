@@ -11,7 +11,7 @@ Step 4 of create-verification-skill (prove end to end) runs on the owner's Mac a
 
 ## Launch
 
-On the owner's Mac, from the clone, run the helper. It installs the already-built binary with `--idle-seconds 5`, then runs `arch-caffeinate doctor`.
+On the owner's Mac, from the clone, run the helper. It installs the already-built binary with `--idle-seconds 5`, loads it with `arch-caffeinate startup install`, then runs `arch-caffeinate doctor`.
 
 ```bash
 .cursor/skills/verify-arch-caffeinate/scripts/verify.sh
@@ -46,7 +46,7 @@ Do not change the screen-lock setting to make V4 pass. If it is not off, V4 is `
 
 ## Cleanup
 
-The helper runs `arch-caffeinate install` with no idle flag so the LaunchAgent returns to the 600 second threshold. It waits until `status --json` reports `idleThresholdSeconds` 600 and the plist has no `--idle-seconds` argument. It leaves the binary, the plist, the log, and `artifacts/verify/<UTC timestamp>/` in place. It does not start a foreground `arch-caffeinate run`, and it does not unload the restored agent.
+The helper runs `arch-caffeinate install` with no idle flag so the plist returns to the 600 second threshold, then restores the load state it found before the run. It runs `startup install` when the agent was loaded and `startup remove` when it was not. It waits until `status --json` reports `idleThresholdSeconds` 600 and the plist has no `--idle-seconds` argument. It leaves the binary, the plist, the log, and `artifacts/verify/<UTC timestamp>/` in place. It does not start a foreground `arch-caffeinate run`.
 
 ## Helpers
 

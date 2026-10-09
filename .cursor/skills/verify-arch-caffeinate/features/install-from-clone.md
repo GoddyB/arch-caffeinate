@@ -1,6 +1,6 @@
 # Install from clone
 
-A clean clone builds `arch-caffeinate` and `install` loads it against a stub `launchctl`.
+A clean clone builds `arch-caffeinate` and proves the opt-in install flow against a stub `launchctl`. `install` writes the binary and the plist without a bootstrap, `startup install` records the bootstrap, and `startup remove` records the bootout.
 
 ## Sub-features
 

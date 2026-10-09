@@ -7,9 +7,9 @@ This directory is the maintained source for verifying arch-caffeinate. Read this
 - The machine is the owner's Mac. Any other OS stops after doctor reports `not macOS`.
 - `arch-caffeinate` is installed per [docs/cli-contract.md](../../../../docs/cli-contract.md).
 - The login shell for the proof is bash.
-- One LaunchAgent (`io.github.goddyb.arch-caffeinate`) is loaded. Do not start a second `run`.
+- The helper loads the one LaunchAgent (`io.github.goddyb.arch-caffeinate`) with `startup install` when a proof needs it. Do not start a second `run`.
 - `arch-caffeinate doctor` has no `FAIL` line before a Mac proof.
-- The helper may pass `--idle-seconds 5`. Restore 600 seconds in cleanup.
+- The helper may pass `--idle-seconds 5`. Restore 600 seconds and the load state you found in cleanup.
 
 ## Driving conventions
 
