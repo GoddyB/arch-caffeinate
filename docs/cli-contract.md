@@ -6,11 +6,13 @@ Paths below use the login user's home directory. The binary name on `PATH` is `a
 
 ## Commands
 
-`arch-caffeinate install [--idle-seconds N]` builds nothing. It copies the running binary to `~/.local/bin/arch-caffeinate`, writes `~/Library/LaunchAgents/io.github.goddyb.arch-caffeinate.plist`, and loads that plist with `launchctl bootstrap gui/$UID`. The plist sets `RunAtLoad` and `KeepAlive`. Its program arguments are `arch-caffeinate run`, plus `--idle-seconds N` when that flag is present. Running `install` again replaces the plist and bootstraps the same label. The end state matches the flags of the latest `install`.
+`arch-caffeinate install [--idle-seconds N] [--startup]` builds nothing. It copies the running binary to `~/.local/bin/arch-caffeinate` and writes `~/Library/LaunchAgents/io.github.goddyb.arch-caffeinate.plist`. It does not load the agent. When it finishes without loading, it prints one line that says to run `arch-caffeinate startup install`. The plist sets `RunAtLoad` and `KeepAlive`. Its program arguments are `arch-caffeinate run`, plus `--idle-seconds N` when that flag is present. Running `install` again replaces the plist and leaves the load state alone. The end state matches the flags of the latest `install`. `--startup` also loads the agent, the same as `startup install` after `install`.
 
-`arch-caffeinate uninstall` boots the agent out and removes the plist. It leaves `~/.local/bin/arch-caffeinate` in place.
+`arch-caffeinate startup install` loads the already-written plist with `launchctl bootstrap gui/$UID`. The load is idempotent. An already-loaded agent is booted out and bootstrapped again. When the plist is missing, the command fails and says to run `install` first.
 
-`arch-caffeinate start` loads the LaunchAgent. `arch-caffeinate stop` unloads it.
+`arch-caffeinate startup remove` boots the agent out with `launchctl bootout`. It removes neither the plist nor the binary. It is idempotent and succeeds when the agent is not loaded.
+
+`arch-caffeinate uninstall` boots the agent out and removes the plist, whether or not the agent is loaded. It leaves `~/.local/bin/arch-caffeinate` in place.
 
 `arch-caffeinate run [--idle-seconds N] [--poll-ms M]` is the foreground daemon the LaunchAgent runs. The default idle threshold is 600 seconds. The default poll is 1000 ms.
 
