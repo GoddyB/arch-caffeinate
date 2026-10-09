@@ -13,7 +13,9 @@ import (
 	"testing"
 )
 
-func TestInstallPlistAndLaunch(t *testing.T) {
+const startupHint = "run arch-caffeinate startup install to start it at login\n"
+
+func TestInstallDoesNotLoad(t *testing.T) {
 	home := t.TempDir()
 	exe := filepath.Join(t.TempDir(), "self")
 	if err := os.WriteFile(exe, []byte("payload"), 0o755); err != nil {
@@ -21,8 +23,9 @@ func TestInstallPlistAndLaunch(t *testing.T) {
 	}
 	var calls []string
 	var stderr bytes.Buffer
+	var stdout bytes.Buffer
 	opts := Options{
-		Stdout: &bytes.Buffer{},
+		Stdout: &stdout,
 		Stderr: &stderr,
 		Getenv: func(k string) string {
 			if k == "HOME" {
@@ -45,6 +48,9 @@ func TestInstallPlistAndLaunch(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr %q", stderr.String())
+	}
+	if got := stdout.String(); got != startupHint {
+		t.Fatalf("stdout %q", got)
 	}
 	plistPath := filepath.Join(home, "Library", "LaunchAgents", "io.github.goddyb.arch-caffeinate.plist")
 	binPath := filepath.Join(home, ".local", "bin", "arch-caffeinate")
@@ -73,6 +79,9 @@ func TestInstallPlistAndLaunch(t *testing.T) {
 	if got := mustArgs(t, dropped); !slices.Equal(got, []string{binPath, "run"}) {
 		t.Fatalf("args %v", got)
 	}
+	if len(calls) != 0 {
+		t.Fatalf("install called launchctl %v", calls)
+	}
 	if err := Run(context.Background(), []string{"uninstall"}, opts); err != nil {
 		t.Fatal(err)
 	}
@@ -84,19 +93,57 @@ func TestInstallPlistAndLaunch(t *testing.T) {
 	}
 	wantCalls := []string{
 		"bootout gui/501/io.github.goddyb.arch-caffeinate",
-		"bootstrap gui/501 " + plistPath,
-		"bootout gui/501/io.github.goddyb.arch-caffeinate",
-		"bootstrap gui/501 " + plistPath,
-		"bootout gui/501/io.github.goddyb.arch-caffeinate",
-		"bootstrap gui/501 " + plistPath,
-		"bootout gui/501/io.github.goddyb.arch-caffeinate",
 	}
 	if !slices.Equal(calls, wantCalls) {
 		t.Fatalf("calls %v", calls)
 	}
 }
 
-func TestStartStop(t *testing.T) {
+func TestInstallStartupFlag(t *testing.T) {
+	home := t.TempDir()
+	exe := filepath.Join(t.TempDir(), "self")
+	if err := os.WriteFile(exe, []byte("payload"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", "io.github.goddyb.arch-caffeinate.plist")
+	var calls []string
+	var stdout bytes.Buffer
+	opts := Options{
+		Stdout:     &stdout,
+		Stderr:     &bytes.Buffer{},
+		Getenv:     func(string) string { return home },
+		Executable: exe,
+		UID:        501,
+		Launch: func(ctx context.Context, args ...string) ([]byte, error) {
+			calls = append(calls, joinArgs(args))
+			return []byte("ok\n"), nil
+		},
+	}
+	if err := Run(context.Background(), []string{"install", "--startup", "--idle-seconds", "5"}, opts); err != nil {
+		t.Fatal(err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout %q", stdout.String())
+	}
+	first := mustRead(t, plistPath)
+	if err := Run(context.Background(), []string{"install", "--startup", "--idle-seconds", "5"}, opts); err != nil {
+		t.Fatal(err)
+	}
+	if first != mustRead(t, plistPath) {
+		t.Fatal("plist changed")
+	}
+	want := []string{
+		"bootout gui/501/io.github.goddyb.arch-caffeinate",
+		"bootstrap gui/501 " + plistPath,
+		"bootout gui/501/io.github.goddyb.arch-caffeinate",
+		"bootstrap gui/501 " + plistPath,
+	}
+	if !slices.Equal(calls, want) {
+		t.Fatalf("calls %v", calls)
+	}
+}
+
+func TestStartupWithoutPlist(t *testing.T) {
 	home := t.TempDir()
 	var calls []string
 	opts := Options{
@@ -106,29 +153,88 @@ func TestStartStop(t *testing.T) {
 		UID:    501,
 		Launch: func(ctx context.Context, args ...string) ([]byte, error) {
 			calls = append(calls, joinArgs(args))
-			return nil, nil
+			return []byte("ok\n"), nil
 		},
 	}
-	err := Run(context.Background(), []string{"start"}, opts)
+	err := Run(context.Background(), []string{"startup", "install"}, opts)
 	if err == nil || err.Error() != "plist missing, run install first" {
 		t.Fatalf("err %v", err)
 	}
-	plistPath := filepath.Join(home, "Library", "LaunchAgents", "io.github.goddyb.arch-caffeinate.plist")
-	if err := os.MkdirAll(filepath.Dir(plistPath), 0o755); err != nil {
-		t.Fatal(err)
+	if len(calls) != 0 {
+		t.Fatalf("calls %v", calls)
 	}
-	if err := os.WriteFile(plistPath, []byte("<plist></plist>\n"), 0o644); err != nil {
-		t.Fatal(err)
+	for _, args := range [][]string{
+		{"startup"},
+		{"startup", "nope"},
+		{"startup", "install", "remove"},
+	} {
+		err := Run(context.Background(), args, opts)
+		if err == nil || err.Error() != "usage: arch-caffeinate startup <install|remove>" {
+			t.Fatalf("args %v err %v", args, err)
+		}
 	}
-	if err := Run(context.Background(), []string{"start"}, opts); err != nil {
-		t.Fatal(err)
-	}
-	if err := Run(context.Background(), []string{"stop"}, opts); err != nil {
+	if err := Run(context.Background(), []string{"startup", "remove"}, opts); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
 		"bootout gui/501/io.github.goddyb.arch-caffeinate",
+	}
+	if !slices.Equal(calls, want) {
+		t.Fatalf("calls %v", calls)
+	}
+}
+
+func TestStartupInstallAndRemove(t *testing.T) {
+	home := t.TempDir()
+	exe := filepath.Join(t.TempDir(), "self")
+	if err := os.WriteFile(exe, []byte("payload"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", "io.github.goddyb.arch-caffeinate.plist")
+	var calls []string
+	opts := Options{
+		Stdout:     &bytes.Buffer{},
+		Stderr:     &bytes.Buffer{},
+		Getenv:     func(string) string { return home },
+		Executable: exe,
+		UID:        501,
+		Launch: func(ctx context.Context, args ...string) ([]byte, error) {
+			calls = append(calls, joinArgs(args))
+			if args[0] == "bootout" {
+				return []byte("Boot-out failed: 3: No such process\n"), errors.New("exit status 3")
+			}
+			return []byte("bootstrap ok\n"), nil
+		},
+	}
+	if err := Run(context.Background(), []string{"install"}, opts); err != nil {
+		t.Fatal(err)
+	}
+	calls = nil
+	if err := Run(context.Background(), []string{"startup", "install"}, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(context.Background(), []string{"startup", "install"}, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(context.Background(), []string{"startup", "remove"}, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(context.Background(), []string{"startup", "remove"}, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(context.Background(), []string{"uninstall"}, opts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(plistPath); !os.IsNotExist(err) {
+		t.Fatal("plist still present")
+	}
+	want := []string{
+		"bootout gui/501/io.github.goddyb.arch-caffeinate",
 		"bootstrap gui/501 " + plistPath,
+		"bootout gui/501/io.github.goddyb.arch-caffeinate",
+		"bootstrap gui/501 " + plistPath,
+		"bootout gui/501/io.github.goddyb.arch-caffeinate",
+		"bootout gui/501/io.github.goddyb.arch-caffeinate",
 		"bootout gui/501/io.github.goddyb.arch-caffeinate",
 	}
 	if !slices.Equal(calls, want) {

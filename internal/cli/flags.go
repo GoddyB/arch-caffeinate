@@ -54,19 +54,21 @@ func parseRunArgs(args []string) (idle int, poll int, err error) {
 	return idleFlag.value, pollFlag.value, nil
 }
 
-func parseInstallArgs(args []string) (*int, error) {
+func parseInstallArgs(args []string) (*int, bool, error) {
 	idleFlag := &positiveInt{}
+	startup := false
 	err := parseFlags("install", args, func(fs *flag.FlagSet) {
 		fs.Var(idleFlag, "idle-seconds", "")
+		fs.BoolVar(&startup, "startup", false, "")
 	})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if !idleFlag.set {
-		return nil, nil
+		return nil, startup, nil
 	}
 	value := idleFlag.value
-	return &value, nil
+	return &value, startup, nil
 }
 
 func parseStatusArgs(args []string) (bool, error) {

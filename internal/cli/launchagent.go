@@ -20,7 +20,7 @@ func domainTarget(uid int) string {
 	return fmt.Sprintf("gui/%d", uid)
 }
 
-func install(ctx context.Context, opts Options, paths daemon.Paths, idle *int) error {
+func install(ctx context.Context, opts Options, paths daemon.Paths, idle *int, startup bool) error {
 	exe := opts.Executable
 	if exe == "" {
 		return fmt.Errorf("executable path is unknown")
@@ -32,7 +32,11 @@ func install(ctx context.Context, opts Options, paths daemon.Paths, idle *int) e
 	if err := daemon.WriteFileAtomic(paths.Plist(), body, 0o644); err != nil {
 		return err
 	}
-	return reload(ctx, opts, paths)
+	if startup {
+		return reload(ctx, opts, paths)
+	}
+	fmt.Fprintln(opts.Stdout, "run arch-caffeinate startup install to start it at login")
+	return nil
 }
 
 func uninstall(ctx context.Context, opts Options, paths daemon.Paths) error {
@@ -43,15 +47,16 @@ func uninstall(ctx context.Context, opts Options, paths daemon.Paths) error {
 	return nil
 }
 
-func start(ctx context.Context, opts Options, paths daemon.Paths) error {
+func startupInstall(ctx context.Context, opts Options, paths daemon.Paths) error {
 	if _, err := os.Stat(paths.Plist()); err != nil {
 		return fmt.Errorf("plist missing, run install first")
 	}
 	return reload(ctx, opts, paths)
 }
 
-func stop(ctx context.Context, opts Options, paths daemon.Paths) error {
-	return runLaunch(ctx, opts, "bootout", serviceTarget(opts.UID))
+func startupRemove(ctx context.Context, opts Options, paths daemon.Paths) error {
+	_, _ = opts.Launch(ctx, "bootout", serviceTarget(opts.UID))
+	return nil
 }
 
 func reload(ctx context.Context, opts Options, paths daemon.Paths) error {

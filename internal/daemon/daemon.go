@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	Version            = "0.1.0"
+	Version            = "1.0.0"
 	Label              = "io.github.goddyb.arch-caffeinate"
 	DefaultIdleSeconds = 600
 	DefaultPollMs      = 1000
