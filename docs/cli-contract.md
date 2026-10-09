@@ -6,9 +6,9 @@ Paths below use the login user's home directory. The binary name on `PATH` is `a
 
 ## Commands
 
-`arch-caffeinate install [--idle-seconds N] [--startup]` builds nothing. It copies the running binary to `~/.local/bin/arch-caffeinate` and writes `~/Library/LaunchAgents/io.github.goddyb.arch-caffeinate.plist`. It does not load the agent. When it finishes without loading, it prints one line that says to run `arch-caffeinate startup install`. The plist sets `RunAtLoad` and `KeepAlive`. Its program arguments are `arch-caffeinate run`, plus `--idle-seconds N` when that flag is present. Running `install` again replaces the plist and leaves the load state alone. The end state matches the flags of the latest `install`. `--startup` also loads the agent, the same as `startup install` after `install`.
+`arch-caffeinate install [--idle-seconds N] [--startup]` builds nothing. It copies the running binary to `~/.local/bin/arch-caffeinate` and writes `~/Library/LaunchAgents/io.github.goddyb.arch-caffeinate.plist`. It does not load the agent; instead it prints one line telling you to run `arch-caffeinate startup install`. The plist sets `RunAtLoad` and `KeepAlive`. Its program arguments are `arch-caffeinate run`, plus `--idle-seconds N` when that flag is present. Running `install` again replaces the plist and leaves the load state alone, so the end state matches the latest flags. `--startup` also loads the agent, the same as `startup install` after `install`.
 
-`arch-caffeinate startup install` loads the already-written plist with `launchctl bootstrap gui/$UID`. The load is idempotent. An already-loaded agent is booted out and bootstrapped again. When the plist is missing, the command fails and says to run `install` first.
+`arch-caffeinate startup install` loads the already-written plist with `launchctl bootstrap gui/$UID`. The load is idempotent: an already-loaded agent is booted out and bootstrapped again. When the plist is missing, the command fails and says to run `install` first.
 
 `arch-caffeinate startup remove` boots the agent out with `launchctl bootout`. It removes neither the plist nor the binary. It is idempotent and succeeds when the agent is not loaded.
 
@@ -44,8 +44,8 @@ The daemon appends logs to `~/Library/Logs/arch-caffeinate.log`.
 
 ## Behavior
 
-On AC power the daemon holds a system-sleep assertion, the same kind `caffeinate -s` holds. On battery it releases that assertion.
+On AC power the daemon holds a system-sleep assertion, the same kind `caffeinate -s` holds; on battery it releases it.
 
-When HID idle time reaches the idle threshold, the daemon turns the display fully off once, the same effect as `pmset displaysleepnow`. It does not leave the display in the macOS dim state. Mouse movement or a keypress wakes the display through macOS. A delivered notification makes the daemon declare user activity so the display turns on.
+When HID idle time reaches the threshold, the daemon turns the display fully off once (`pmset displaysleepnow`), not the macOS dim state. Mouse movement or a keypress wakes the display through macOS. A delivered notification makes the daemon declare user activity so the display turns on.
 
 The display wakes without a password prompt only when the macOS screen-lock setting is off. `status` and `doctor` report that setting.

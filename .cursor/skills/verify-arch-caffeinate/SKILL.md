@@ -46,7 +46,7 @@ Do not change the screen-lock setting to make V4 pass. If it is not off, V4 is `
 
 ## Cleanup
 
-The helper runs `arch-caffeinate install` with no idle flag so the plist returns to the 600 second threshold, then restores the load state it found before the run. It runs `startup install` when the agent was loaded and `startup remove` when it was not. It waits until `status --json` reports `idleThresholdSeconds` 600 and the plist has no `--idle-seconds` argument. It leaves the binary, the plist, the log, and `artifacts/verify/<UTC timestamp>/` in place. It does not start a foreground `arch-caffeinate run`.
+The helper runs `arch-caffeinate install` with no idle flag so the plist returns to the 600 second threshold, then restores the load state it found: `startup install` when the agent was loaded, `startup remove` when it was not. It waits until `status --json` reports `idleThresholdSeconds` 600 and the plist has no `--idle-seconds` argument. It leaves the binary, the plist, the log, and `artifacts/verify/<UTC timestamp>/` in place. It does not start a foreground `arch-caffeinate run`.
 
 ## Helpers
 

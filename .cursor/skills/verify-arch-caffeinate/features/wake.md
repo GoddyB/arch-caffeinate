@@ -27,7 +27,7 @@ Preconditions:
 
 ## Gotchas
 
-- `arch-caffeinate wake` is simulated user activity. It has the same effect as `caffeinate -u -t 1`. A remote run cannot move the mouse. Record a physical mouse move only if you perform it.
+- `arch-caffeinate wake` is simulated user activity (`caffeinate -u -t 1`); a remote run cannot move the mouse. Record a physical mouse move only if you perform it.
 - A notification that never arrives does not prove `v3-notification`.
 - `HIDIdleTime` must drop across `wake`. That drop is what keeps the next poll from turning the display off again.
 - Prove each sub-feature from a fully off display. Waking an already-on display proves nothing.

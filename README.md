@@ -4,23 +4,23 @@
 
 arch-caffeinate keeps a Mac awake while it is plugged in, and turns the display fully off after a stretch of idle time so the screen does not burn in.
 
-It is for a Mac that sits plugged in for long stretches, for example as a home server or an always-on agent box. You want the machine awake and reachable, but you do not want a lit panel on the desk.
+It is for a Mac that sits plugged in for long stretches, for example as a home server or an always-on agent box.
 
 A LaunchAgent runs the daemon, `arch-caffeinate run`. Each poll the daemon reads the power source and the HID idle time, and writes a state file that `status` reads.
 
 macOS ships `caffeinate`. arch-caffeinate differs in three ways.
 
-- It holds the sleep assertion only while the Mac draws AC power. On battery it releases the assertion and lets the Mac sleep.
-- When the idle time passes a threshold, it turns the display fully off, the same effect as `pmset displaysleepnow`. It does not leave the display in the macOS dim state.
+- It holds the sleep assertion only on AC power; on battery it lets the Mac sleep.
+- Past the idle threshold, it turns the display fully off (`pmset displaysleepnow`), not the macOS dim state.
 - Mouse movement, a keypress, or a delivered notification turns the display back on.
 
-The display wakes without a password prompt only when the macOS screen-lock setting is off. `status` and `doctor` report that setting. They do not change it.
+The display wakes without a password prompt only when the macOS screen-lock setting is off. `status` and `doctor` report that setting without changing it.
 
 Released as v1, open source under the [MIT License](LICENSE).
 
 ## Install
 
-Build from a clone. `install` copies the binary to `~/.local/bin/arch-caffeinate` and writes the LaunchAgent plist. It does not load the agent, and it prints one line that says how to load it.
+Build from a clone. `install` copies the binary to `~/.local/bin/arch-caffeinate` and writes the LaunchAgent plist. It does not load the agent; it prints one line saying how to load it.
 
 ```bash
 go build ./cmd/arch-caffeinate && ./arch-caffeinate install
@@ -40,9 +40,9 @@ arch-caffeinate uninstall
 - `startup install` loads the LaunchAgent, so the daemon starts now and at login.
 - `status` prints the daemon state. Add `--json` for the fields listed in the contract.
 - `startup remove` unloads the agent. The plist and the binary stay on disk.
-- `uninstall` unloads the agent when it is loaded and removes the plist. Remove `~/.local/bin/arch-caffeinate` yourself if you no longer want it on `PATH`.
+- `uninstall` unloads the loaded agent and removes the plist. Delete `~/.local/bin/arch-caffeinate` yourself to remove the binary.
 
-`install --startup` runs the install and the load in one step. `install --idle-seconds N` sets the idle threshold, 600 seconds by default. The load and unload commands are idempotent, and nothing prompts interactively.
+`install --startup` installs and loads in one step. `install --idle-seconds N` sets the idle threshold (600 seconds by default). Load and unload are idempotent and never prompt.
 
 ## Docs
 
