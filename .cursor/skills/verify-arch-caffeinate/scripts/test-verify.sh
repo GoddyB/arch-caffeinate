@@ -60,6 +60,14 @@ if [[ "${VERIFY_MODE}" == "broken" ]]; then
   printf '%s\n' 'launchctl refused' >&2
   exit 1
 fi
+mode="stopped"
+if [[ -f "$VERIFY_FIXTURE/agent_mode" ]]; then
+  mode="$(cat "$VERIFY_FIXTURE/agent_mode")"
+fi
+if [[ "$mode" == "stopped" ]]; then
+  printf '%s\n' 'Print failed: 3: No such process' >&2
+  exit 1
+fi
 pid_file="$VERIFY_FIXTURE/parent_pid"
 if [ -f "$VERIFY_FIXTURE/daemon_pid" ]; then
   pid_file="$VERIFY_FIXTURE/daemon_pid"
@@ -109,7 +117,7 @@ if mode == "healthy":
         "pid": int(open(pid_path).read()) if running else None,
         "sleepPrevented": True,
         "idleThresholdSeconds": 600 if cleanup else 5,
-        "writtenAt": int(time.time() * 1000),
+        "writtenAt": int(time.time() * 1000) if running else 0,
         "pollMs": 1000,
     }
 else:
@@ -143,7 +151,7 @@ print(json.dumps({
     "idleSeconds": 6 if mode == "healthy" else 0,
     "idleThresholdSeconds": saved.get("idleThresholdSeconds"),
     "screenLock": "off" if mode == "healthy" else "immediate",
-    "version": "0.1.0",
+    "version": "1.0.0",
 }))
 PY
 }
@@ -173,9 +181,6 @@ case "$cmd" in
       printf '%s\n' drift >>"$plist"
     fi
     cp "$0" "${HOME}/.local/bin/arch-caffeinate"
-    if [[ "$VERIFY_MODE" == "healthy" ]]; then
-      printf '%s\n' started >"$fix/agent_mode"
-    fi
     write_state
     ;;
   doctor)
@@ -190,9 +195,6 @@ case "$cmd" in
     printf '%s\n' 'PASS macOS' 'PASS heartbeat: fresh' 'PASS screenlock: off'
     ;;
   status)
-    if [[ "$VERIFY_MODE" == "healthy" && -f "$fix/agent_mode" && "$(cat "$fix/agent_mode")" == "booting" ]]; then
-      printf '%s\n' started >"$fix/agent_mode"
-    fi
     write_state
     print_status
     ;;
@@ -202,21 +204,40 @@ case "$cmd" in
       printf '%s\n' 0 >"$fix/idle_ns"
     fi
     ;;
-  stop)
-    if [[ "$VERIFY_MODE" == "healthy" ]]; then
-      printf '%s\n' stopped >"$fix/agent_mode"
-    fi
-    ;;
-  start)
-    if [[ "$VERIFY_MODE" == "healthy" ]]; then
-      printf '%s\n' booting >"$fix/agent_mode"
-      parent="$(cat "$fix/parent_pid")"
-      printf '%s\n' "$((parent + 1))" >"$fix/daemon_pid"
-      write_state
-    fi
+  startup)
+    sub="${1:-}"
+    case "$sub" in
+      install)
+        if [[ ! -f "$plist" ]]; then
+          printf '%s\n' 'plist missing, run install first' >&2
+          exit 1
+        fi
+        if [[ "$VERIFY_MODE" == "healthy" ]]; then
+          loads=0
+          if [[ -f "$fix/loads" ]]; then
+            loads="$(cat "$fix/loads")"
+          fi
+          loads=$((loads + 1))
+          printf '%s\n' "$loads" >"$fix/loads"
+          parent="$(cat "$fix/parent_pid")"
+          printf '%s\n' "$((parent + loads - 1))" >"$fix/daemon_pid"
+          printf '%s\n' started >"$fix/agent_mode"
+          write_state
+        fi
+        ;;
+      remove)
+        if [[ "$VERIFY_MODE" == "healthy" ]]; then
+          printf '%s\n' stopped >"$fix/agent_mode"
+        fi
+        ;;
+      *)
+        printf '%s\n' 'usage: arch-caffeinate startup <install|remove>' >&2
+        exit 2
+        ;;
+    esac
     ;;
   --version)
-    printf '%s\n' '0.1.0'
+    printf '%s\n' '1.0.0'
     ;;
   *)
     printf 'unknown %s\n' "$cmd" >&2

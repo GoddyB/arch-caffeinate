@@ -1,6 +1,6 @@
 # Install from clone
 
-A clean clone builds `arch-caffeinate` and `install` loads it against a stub `launchctl`.
+A clean clone builds `arch-caffeinate` and proves the opt-in install flow against a stub `launchctl`. `install` writes the binary and plist without bootstrapping; `startup install` records the bootstrap and `startup remove` the bootout.
 
 ## Sub-features
 
@@ -8,7 +8,7 @@ A clean clone builds `arch-caffeinate` and `install` loads it against a stub `la
 
 ## How to get to it (user POV)
 
-- Clone the repo and install from that build, without reusing a binary left over from an earlier checkout.
+- Clone the repo and install from that build, not from an earlier binary.
 
 ## Driving it with bash
 
@@ -24,5 +24,5 @@ Preconditions:
 
 ## Gotchas
 
-- The script clones `origin`. It needs a network path to that remote.
+- The script clones `origin`, so it needs network access to that remote.
 - Set `VERIFY_INSTALL_TEST` only when a stub should stand in for this script. The Mac proof uses the real path.

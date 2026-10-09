@@ -32,12 +32,31 @@ EOF
 chmod +x "$STUB"
 
 PLIST="$HOME_DIR/Library/LaunchAgents/io.github.goddyb.arch-caffeinate.plist"
-HOME="$HOME_DIR" ARCH_CAFFEINATE_LAUNCHCTL="$STUB" "$WORKDIR/arch-caffeinate" install --idle-seconds 5
+HINT="$(HOME="$HOME_DIR" ARCH_CAFFEINATE_LAUNCHCTL="$STUB" "$WORKDIR/arch-caffeinate" install --idle-seconds 5)"
+case "$HINT" in
+  *"arch-caffeinate startup install"*) ;;
+  *) echo "install did not print the startup hint: $HINT" >&2; exit 1 ;;
+esac
+if [[ "$(printf '%s\n' "$HINT" | wc -l)" -ne 1 ]]; then
+  echo "install hint is not one line: $HINT" >&2
+  exit 1
+fi
 cp "$PLIST" "$WORKDIR/plist.1"
 HOME="$HOME_DIR" ARCH_CAFFEINATE_LAUNCHCTL="$STUB" "$WORKDIR/arch-caffeinate" install --idle-seconds 5
 cmp "$PLIST" "$WORKDIR/plist.1"
 cmp "$WORKDIR/arch-caffeinate" "$HOME_DIR/.local/bin/arch-caffeinate"
-grep -qx "bootstrap gui/$(id -u) $PLIST" "$LOG"
+if [[ -s "$LOG" ]]; then
+  echo "install called launchctl:" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+TARGET="gui/$(id -u)/io.github.goddyb.arch-caffeinate"
+HOME="$HOME_DIR" ARCH_CAFFEINATE_LAUNCHCTL="$STUB" "$WORKDIR/arch-caffeinate" startup install
+HOME="$HOME_DIR" ARCH_CAFFEINATE_LAUNCHCTL="$STUB" "$WORKDIR/arch-caffeinate" startup install
+HOME="$HOME_DIR" ARCH_CAFFEINATE_LAUNCHCTL="$STUB" "$WORKDIR/arch-caffeinate" startup remove
+HOME="$HOME_DIR" ARCH_CAFFEINATE_LAUNCHCTL="$STUB" "$WORKDIR/arch-caffeinate" startup remove
+
 python3 - "$PLIST" <<'PY'
 import sys
 import xml.etree.ElementTree as ET
@@ -55,5 +74,35 @@ args = [node.text for node in list(vals["ProgramArguments"])]
 if "--idle-seconds" not in args or vals["KeepAlive"].tag != "true" or vals["RunAtLoad"].tag != "true":
     raise SystemExit("plist missing idle flag or keepalive: " + repr(args))
 PY
+
+HOME="$HOME_DIR" ARCH_CAFFEINATE_LAUNCHCTL="$STUB" "$WORKDIR/arch-caffeinate" uninstall
+if [[ -e "$PLIST" ]]; then
+  echo "uninstall left the plist in place" >&2
+  exit 1
+fi
+cmp "$WORKDIR/arch-caffeinate" "$HOME_DIR/.local/bin/arch-caffeinate"
+
+EXPECTED="$WORKDIR/expected.log"
+{
+  printf '%s\n' "bootout $TARGET"
+  printf '%s\n' "bootstrap gui/$(id -u) $PLIST"
+  printf '%s\n' "bootout $TARGET"
+  printf '%s\n' "bootstrap gui/$(id -u) $PLIST"
+  printf '%s\n' "bootout $TARGET"
+  printf '%s\n' "bootout $TARGET"
+  printf '%s\n' "bootout $TARGET"
+} >"$EXPECTED"
+if ! cmp "$LOG" "$EXPECTED"; then
+  echo "launchctl log mismatch" >&2
+  exit 1
+fi
+
+EMPTY_HOME="$WORKDIR/home-empty"
+mkdir -p "$EMPTY_HOME"
+if HOME="$EMPTY_HOME" ARCH_CAFFEINATE_LAUNCHCTL="$STUB" "$WORKDIR/arch-caffeinate" startup install >"$WORKDIR/empty.out" 2>"$WORKDIR/empty.err"; then
+  echo "startup install without a plist must fail" >&2
+  exit 1
+fi
+grep -q "run install first" "$WORKDIR/empty.err"
 
 echo "install-from-clone ok"

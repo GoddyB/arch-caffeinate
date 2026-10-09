@@ -98,7 +98,7 @@ func Run(ctx context.Context, args []string, opts Options) error {
 	}
 	paths := daemon.Paths{Home: home}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: arch-caffeinate <install|uninstall|start|stop|run|status|doctor|wake|--version>")
+		return fmt.Errorf("usage: arch-caffeinate <install|startup|uninstall|run|status|doctor|wake|--version>")
 	}
 	cmd := args[0]
 	rest := args[1:]
@@ -108,17 +108,25 @@ func Run(ctx context.Context, args []string, opts Options) error {
 	}
 	switch cmd {
 	case "install":
-		idle, err := parseInstallArgs(rest)
+		idle, startup, err := parseInstallArgs(rest)
 		if err != nil {
 			return err
 		}
-		return install(ctx, opts, paths, idle)
+		return install(ctx, opts, paths, idle, startup)
+	case "startup":
+		if len(rest) != 1 {
+			return fmt.Errorf("usage: arch-caffeinate startup <install|remove>")
+		}
+		switch rest[0] {
+		case "install":
+			return startupInstall(ctx, opts, paths)
+		case "remove":
+			return startupRemove(ctx, opts, paths)
+		default:
+			return fmt.Errorf("usage: arch-caffeinate startup <install|remove>")
+		}
 	case "uninstall":
 		return uninstall(ctx, opts, paths)
-	case "start":
-		return start(ctx, opts, paths)
-	case "stop":
-		return stop(ctx, opts, paths)
 	case "run":
 		idle, poll, err := parseRunArgs(rest)
 		if err != nil {

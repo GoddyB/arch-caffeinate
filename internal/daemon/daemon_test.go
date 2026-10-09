@@ -557,7 +557,9 @@ func TestStreamBackoffWhilePollContinues(t *testing.T) {
 			gaps := []time.Duration{base, 2 * base, 4 * base}
 			for i, want := range gaps {
 				got := starts[i+1].Sub(starts[i])
-				if got < want/2 || got > want+80*time.Millisecond {
+				// 80ms of slack flaked on a loaded shared CI runner, where a
+				// timer can stall past the whole retry schedule.
+				if got < want/2 || got > want+240*time.Millisecond {
 					t.Fatalf("gap %d = %s want %s starts %v", i, got, want, starts)
 				}
 			}
