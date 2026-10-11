@@ -15,10 +15,7 @@ INSTALL_TEST="${VERIFY_INSTALL_TEST:-$ROOT/scripts/test-install-from-clone.sh}"
 public_path() {
   case "$1" in
     "$ROOT"/*) printf '%s' "${1#"$ROOT"/}" ;;
-    "$HOME"/*)
-      # shellcheck disable=SC2088 # tilde is the published path prefix, not a home expansion
-      printf '~/%s' "${1#"$HOME"/}"
-      ;;
+    "$HOME"/*) printf '%s/%s' "$(printf '\176')" "${1#"$HOME"/}" ;;
     "") printf '%s' empty ;;
     *) printf '%s' "$(basename "$1")" ;;
   esac
@@ -68,9 +65,27 @@ fail_all() {
   finish
 }
 
+run_v8() {
+  local v8_out="$OUT/v8.txt"
+  local v8_label
+  v8_label="$(public_path "$INSTALL_TEST")"
+  if [[ -x "$INSTALL_TEST" ]] && "$INSTALL_TEST" >"$v8_out" 2>&1; then
+    cat "$v8_out" >>"$TRANSCRIPT"
+    mark PASS V8 "$v8_label exited 0"
+  else
+    cat "$v8_out" >>"$TRANSCRIPT" 2>/dev/null || true
+    mark FAIL V8 "$v8_label failed"
+  fi
+}
+
 not_macos() {
   line "FAIL doctor not macOS"
-  fail_all "not macOS"
+  local id
+  for id in V1 V2 V3 V4 V5 V6 V7; do
+    mark FAIL "$id" "not macOS"
+  done
+  run_v8
+  finish
 }
 
 if [[ "$(uname -s)" != Darwin ]]; then
@@ -402,15 +417,7 @@ else
   mark FAIL V7 "install_ok=${install_ok} running=${running} pid=${status_pid} launch_pid=${launch_pid} threshold=${threshold} power=${power} display=${display_field} version=${status_version}"
 fi
 
-v8_out="$OUT/v8.txt"
-v8_label="$(public_path "$INSTALL_TEST")"
-if [[ -x "$INSTALL_TEST" ]] && "$INSTALL_TEST" >"$v8_out" 2>&1; then
-  cat "$v8_out" >>"$TRANSCRIPT"
-  mark PASS V8 "$v8_label exited 0"
-else
-  cat "$v8_out" >>"$TRANSCRIPT" 2>/dev/null || true
-  mark FAIL V8 "$v8_label failed"
-fi
+run_v8
 
 "$BIN" install >>"$TRANSCRIPT" 2>&1 || true
 threshold_is_600() {
