@@ -330,8 +330,8 @@ cleanup_runs() {
   stop_parent "${BROKEN_RUN:-}"
   stop_parent "${BANNER_RUN:-}"
   stop_parent "${DOCTOR_RUN:-}"
-  rm -rf "${HOME_RUN:-}" "${BROKEN_RUN:-}" "${BANNER_RUN:-}" "${DOCTOR_RUN:-}"
-  rm -f "${healthy_log:-}" "${broken_log:-}" "${banner_log:-}" "${doctor_log:-}"
+  rm -rf "${HOME_RUN:-}" "${BROKEN_RUN:-}" "${BANNER_RUN:-}" "${DOCTOR_RUN:-}" "${LINUX_RUN:-}"
+  rm -f "${healthy_log:-}" "${broken_log:-}" "${banner_log:-}" "${doctor_log:-}" "${linux_log:-}"
 }
 trap cleanup_runs EXIT
 
@@ -362,6 +362,28 @@ prepare healthy "$DOCTOR_RUN" 0
 printf '%s\n' 'PASS macOS' 'PASS heartbeat: fresh' >"$DOCTOR_RUN/fixture/doctor.txt"
 drive "$DOCTOR_RUN" healthy "$doctor_log"
 doctor_code=$?
+
+linux_log="$(mktemp)"
+LINUX_RUN="$(mktemp -d)"
+mkdir -p "$LINUX_RUN/bin" "$LINUX_RUN/home"
+cat >"$LINUX_RUN/bin/uname" <<'EOF'
+#!/bin/sh
+printf '%s\n' Linux
+EOF
+chmod +x "$LINUX_RUN/bin/uname"
+cat >"$LINUX_RUN/install-test.sh" <<'EOF'
+#!/bin/sh
+printf '%s\n' linux-v8-sentinel
+exit 0
+EOF
+chmod +x "$LINUX_RUN/install-test.sh"
+HOME="$LINUX_RUN/home" \
+  VERIFY_POLL_SEC=0 \
+  VERIFY_OUT="$LINUX_RUN/out" \
+  VERIFY_INSTALL_TEST="$LINUX_RUN/install-test.sh" \
+  PATH="$LINUX_RUN/bin:$PATH" \
+  "$VERIFY" >"$linux_log" 2>&1
+linux_code=$?
 set -e
 
 stop_parent "$HOME_RUN"
@@ -376,6 +398,8 @@ printf '%s\n' "--- usage banner exit ${banner_code} ---"
 cat "$banner_log"
 printf '%s\n' "--- doctor omission exit ${doctor_code} ---"
 cat "$doctor_log"
+printf '%s\n' "--- linux exit ${linux_code} ---"
+cat "$linux_log"
 
 [[ "$healthy_code" -eq 0 ]] || fail "healthy stub exited ${healthy_code}"
 grep -q '^FAIL ' "$healthy_log" && fail "healthy stub printed FAIL"
@@ -392,5 +416,14 @@ grep -q 'turn screen lock off' "$banner_log" || fail "usage banner did not quote
 
 [[ "$doctor_code" -ne 0 ]] || fail "doctor omission exited 0"
 assert_only_v4_fails "$doctor_log" "doctor omission"
+
+[[ "$linux_code" -ne 0 ]] || fail "linux helper exited 0"
+grep -q '^FAIL doctor not macOS$' "$linux_log" || fail "linux helper missing doctor line"
+for id in V1 V2 V3 V4 V5 V6 V7; do
+  grep -q "^FAIL ${id} not macOS$" "$linux_log" || fail "linux helper missing FAIL ${id}"
+done
+grep -q '^PASS V8 install-test.sh exited 0$' "$linux_log" || fail "linux helper did not pass V8"
+grep -q '^FAIL V8 ' "$linux_log" && fail "linux helper failed V8"
+grep -q 'linux-v8-sentinel' "$LINUX_RUN/out/transcript.txt" || fail "linux helper did not run the V8 script"
 
 printf '%s\n' 'test-verify ok'

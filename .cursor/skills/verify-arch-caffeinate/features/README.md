@@ -4,7 +4,7 @@ This directory is the maintained source for verifying arch-caffeinate. Read this
 
 ## Baseline preconditions
 
-- The machine is the owner's Mac. Any other OS stops after doctor reports `not macOS`.
+- V1 through V7 need the owner's Mac. Any other OS records those as `not macOS`. V8 follows [Install from clone](./install-from-clone.md).
 - `arch-caffeinate` is installed per [docs/cli-contract.md](../../../../docs/cli-contract.md).
 - The login shell for the proof is bash.
 - One LaunchAgent (`io.github.goddyb.arch-caffeinate`) is loaded. Do not start a second `run`.

@@ -7,7 +7,7 @@ description: "Drive the installed arch-caffeinate macOS CLI from bash and prove 
 
 Drive the installed `arch-caffeinate` binary from a terminal running bash. The contract is [docs/cli-contract.md](../../../docs/cli-contract.md). The feature map is [features/README.md](features/README.md). One LaunchAgent label and one state file exist per login user. Do not start a second `arch-caffeinate run` while that agent is loaded.
 
-Step 4 of create-verification-skill (prove end to end) runs on the owner's Mac after the CLI is installed. On any other machine, run only the helper. It prints `FAIL` with the reason.
+Step 4 of create-verification-skill (prove end to end) runs on the owner's Mac after the CLI is installed. On any other machine, run the helper. It marks doctor and V1 through V7 `FAIL` with `not macOS`, then runs V8.
 
 ## Launch
 
@@ -21,11 +21,11 @@ Ready means `arch-caffeinate doctor` prints a `PASS` line for the LaunchAgent an
 
 ## Doctor
 
-Run `arch-caffeinate doctor` before any Drive step when a check looks wrong. Doctor is read-only. On a machine that is not macOS, the macOS line says `not macOS` and the command exits non-zero. Continue only when every doctor line is `PASS` or `WARN`.
+Run `arch-caffeinate doctor` before a V1 through V7 drive when a check looks wrong. Doctor is read-only. On a machine that is not macOS, the macOS line says `not macOS` and the command exits non-zero. Continue V1 through V7 only when every doctor line is `PASS` or `WARN`. V8 does not use that gate.
 
 ## Drive
 
-Read [features/README.md](features/README.md), then the feature file for the V-number you are proving. Run the commands in that file from bash. The helper runs V1 through V7 in order with `--idle-seconds 5`, then V8 via `scripts/test-install-from-clone.sh`.
+Read [features/README.md](features/README.md), then the feature file for the V-number you are proving. Run the commands in that file from bash. On macOS the helper runs V1 through V7 in order with `--idle-seconds 5`, then V8 via `scripts/test-install-from-clone.sh`. On any other OS the helper still runs that V8 script.
 
 Observable commands, copied into the evidence directory:
 
@@ -50,7 +50,7 @@ The helper runs `arch-caffeinate install` with no idle flag so the LaunchAgent r
 
 ## Helpers
 
-`.cursor/skills/verify-arch-caffeinate/scripts/verify.sh` is the whole proof. It prints one `PASS` or `FAIL` line per V-number and exits 0 only when every line is `PASS`. V8 runs `scripts/test-install-from-clone.sh`. The helper does not run `scripts/check-public-hygiene.sh`.
+`.cursor/skills/verify-arch-caffeinate/scripts/verify.sh` is the whole proof. It prints one `PASS` or `FAIL` line per V-number and exits 0 only when every line is `PASS`. V8 runs `scripts/test-install-from-clone.sh` on every OS. V1 through V7 run only on macOS. The helper does not run `scripts/check-public-hygiene.sh`.
 
 `scripts/test-verify.sh` stubs `pmset`, `ioreg`, `sysadminctl`, `launchctl`, `arch-caffeinate`, and Ghostty on a fake home directory. Set `VERIFY_POLL_SEC=0` so the waits do not sleep. A broken stub must exit non-zero and print `FAIL` for V1 through V8.
 
